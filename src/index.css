@@ -783,6 +783,286 @@
   }
 }
 
+@layer components {
+  /*
+    The sign-in scene (components/auth/OfficeScene.tsx): a small copy of the
+    office floor above, using the same fills, so the first screen already
+    looks like the office. One timeline, played once on first paint:
+
+      0.15s  headline words rise, 70ms apart
+      0.35s  rooms light up in reading order, 200ms apart; each person
+             arrives 100ms after their light
+      2.0s   a knock at one door: two gold rings, twice (done by 4.25s)
+      2.4s   your status turns from Away to Online
+
+    Nothing moves after about 4.3 seconds (WCAG 2.2.2). Transform and
+    opacity only, except the status dot's colour. Every animation is `both`,
+    so its first frame holds through the delay and its last frame stays.
+  */
+  .scene {
+    --room-fill: #08462a;
+    --room-dark: #141b13;
+    --floor: #070a06;
+    display: grid;
+    justify-items: center;
+    gap: 18px;
+    width: 100%;
+  }
+  .scene-floor {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 1px;
+    width: 100%;
+    padding: 1px;
+    border-radius: var(--radius-xl);
+    overflow: hidden;
+    background: var(--floor);
+    border: 1px solid rgba(246, 250, 247, 0.1);
+    box-shadow:
+      inset 0 1px 0 rgba(246, 250, 247, 0.06),
+      0 30px 60px -28px rgba(0, 0, 0, 0.7),
+      0 0 0 6px rgba(246, 250, 247, 0.03);
+  }
+  .scene-room {
+    position: relative;
+    isolation: isolate;
+    display: grid;
+    place-items: center;
+    aspect-ratio: 5 / 4;
+    background: var(--room-dark);
+  }
+  .scene--compact .scene-room {
+    aspect-ratio: auto;
+    height: 64px;
+  }
+  /* On the phone the strip sits on the light page inside its own dark card:
+     the big drop shadow would smudge grey onto the page there. */
+  .scene--compact .scene-floor {
+    box-shadow: inset 0 1px 0 rgba(246, 250, 247, 0.06);
+  }
+  /* The knock's rings spread over the neighbouring rooms, so its room sits on top. */
+  .scene-room[data-knock] {
+    z-index: 1;
+  }
+  .scene-light {
+    position: absolute;
+    inset: 0;
+    z-index: -1;
+    background:
+      radial-gradient(120% 90% at 50% 112%, rgba(255, 217, 102, 0.18), transparent 58%),
+      var(--room-fill);
+    animation: scene-fade 600ms var(--ease-out-strong) both;
+    animation-delay: calc(350ms + var(--n, 0) * 200ms);
+  }
+  .scene-door {
+    position: absolute;
+    bottom: 0;
+    left: 50%;
+    width: 38%;
+    height: 2px;
+    translate: -50% 0;
+    border-radius: 2px;
+    background: var(--color-gold);
+    box-shadow: 0 -6px 18px 2px rgba(255, 217, 102, 0.35);
+    animation: scene-fade 600ms var(--ease-out-strong) both;
+    animation-delay: calc(350ms + var(--n, 0) * 200ms);
+  }
+  @keyframes scene-fade {
+    from {
+      opacity: 0;
+    }
+    to {
+      opacity: 1;
+    }
+  }
+  .scene-person {
+    position: relative;
+    display: grid;
+    place-items: center;
+    width: 36px;
+    height: 36px;
+    border-radius: 9999px;
+    color: #f6faf7;
+    background: rgba(246, 250, 247, 0.12);
+    border: 1px solid rgba(246, 250, 247, 0.24);
+    animation: scene-arrive 520ms var(--ease-out-strong) both;
+    animation-delay: calc(450ms + var(--n, 0) * 200ms);
+  }
+  .scene--compact .scene-person {
+    width: 30px;
+    height: 30px;
+  }
+  @keyframes scene-arrive {
+    from {
+      opacity: 0;
+      transform: translateY(14px) scale(0.92);
+    }
+    to {
+      opacity: 1;
+      transform: none;
+    }
+  }
+  /* "Do not disturb": a gold moon on the person. */
+  .scene-badge {
+    position: absolute;
+    top: -3px;
+    right: -5px;
+    display: grid;
+    place-items: center;
+    width: 16px;
+    height: 16px;
+    border-radius: 9999px;
+    color: var(--color-gold);
+    background: var(--floor);
+    border: 1px solid rgba(255, 217, 102, 0.5);
+  }
+  /* The knock: two gold rings from the door, the second a beat behind. */
+  .scene-knock {
+    position: absolute;
+    bottom: 0;
+    left: 50%;
+    width: 64px;
+    height: 64px;
+    translate: -50% 50%;
+    pointer-events: none;
+  }
+  .scene-ring {
+    position: absolute;
+    inset: 0;
+    border-radius: 9999px;
+    border: 2px solid rgba(255, 217, 102, 0.75);
+    animation: scene-knock 1s var(--ease-out-strong) 2 both;
+    animation-delay: 2s;
+  }
+  .scene-ring + .scene-ring {
+    animation-delay: 2.25s;
+  }
+  /* Starts invisible, so the held first frame shows nothing before the knock. */
+  @keyframes scene-knock {
+    0% {
+      opacity: 0;
+      transform: scale(0.35);
+    }
+    12% {
+      opacity: 0.85;
+    }
+    100% {
+      opacity: 0;
+      transform: scale(1.35);
+    }
+  }
+
+  /* Your status, under the floor: Away, then Online once you are in. */
+  .scene-status {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 5px 14px 5px 5px;
+    border-radius: 9999px;
+    font-size: 13px;
+    color: #f6faf7;
+    background: rgba(246, 250, 247, 0.08);
+    border: 1px solid rgba(246, 250, 247, 0.14);
+    box-shadow: inset 0 1px 0 rgba(246, 250, 247, 0.08);
+    animation: scene-arrive 520ms var(--ease-out-strong) both;
+    animation-delay: 1.5s;
+  }
+  .scene-status-you {
+    display: grid;
+    place-items: center;
+    width: 24px;
+    height: 24px;
+    border-radius: 9999px;
+    background: rgba(246, 250, 247, 0.14);
+  }
+  .scene-status-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 9999px;
+    background: #00a652;
+    box-shadow: 0 0 0 3px rgba(0, 166, 82, 0.25);
+    animation: scene-dot 320ms var(--ease-out-strong) both;
+    animation-delay: 2.4s;
+  }
+  @keyframes scene-dot {
+    from {
+      background: rgba(246, 250, 247, 0.4);
+      box-shadow: 0 0 0 3px transparent;
+    }
+  }
+  /* The two words share one grid cell, so the pill keeps its width. */
+  .scene-status-label {
+    display: grid;
+  }
+  .scene-status-label > span {
+    grid-area: 1 / 1;
+  }
+  .scene-status-away {
+    animation: scene-word-out 280ms var(--ease-out-strong) both;
+    animation-delay: 2.4s;
+  }
+  .scene-status-online {
+    animation: scene-word-in 320ms var(--ease-out-strong) both;
+    animation-delay: 2.45s;
+  }
+  /* Blur bridges the swap so it reads as one word changing, not two. */
+  @keyframes scene-word-out {
+    to {
+      opacity: 0;
+      filter: blur(2px);
+      transform: translateY(-5px);
+    }
+  }
+  @keyframes scene-word-in {
+    from {
+      opacity: 0;
+      filter: blur(2px);
+      transform: translateY(5px);
+    }
+  }
+
+  .word-rise {
+    display: inline-block;
+    animation: word-rise 560ms var(--ease-out-strong) both;
+    animation-delay: calc(150ms + var(--i, 0) * 70ms);
+  }
+  @keyframes word-rise {
+    from {
+      opacity: 0;
+      filter: blur(6px);
+      transform: translateY(0.45em);
+    }
+  }
+
+  /* The panel's two glows settle into place once. */
+  .scene-drift {
+    animation: scene-drift 4s var(--ease-out-strong) both;
+  }
+  .scene-drift-alt {
+    animation: scene-drift-alt 4s var(--ease-out-strong) both;
+  }
+  @keyframes scene-drift {
+    from {
+      transform: translate(-48px, 36px) scale(0.88);
+    }
+  }
+  @keyframes scene-drift-alt {
+    from {
+      transform: translate(40px, -28px) scale(0.9);
+    }
+  }
+
+  /* The sign-in arrow leans forward on hover (pointers only). */
+  .cta-arrow {
+    transition: transform 160ms var(--ease-out-strong);
+  }
+  @media (hover: hover) and (pointer: fine) {
+    .group:hover .cta-arrow {
+      transform: translateX(3px);
+    }
+  }
+}
+
 /* Reduced motion means gentler, not absent: feedback stays, movement goes. */
 @media (prefers-reduced-motion: reduce) {
   *,
@@ -801,7 +1081,14 @@
   /* Staggered entrances: no waiting with nothing on screen. */
   .room-in,
   .row-in,
-  .knock-in {
+  .knock-in,
+  .scene,
+  .scene *,
+  .scene *::after,
+  .word-rise,
+  .reveal,
+  .scene-drift,
+  .scene-drift-alt {
     animation-delay: 0s !important;
   }
 }

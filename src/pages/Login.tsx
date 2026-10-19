@@ -1,5 +1,7 @@
-import { useEffect, useId, useState, type FormEvent, type ReactNode } from 'react'
+import { useEffect, useId, useState, type CSSProperties, type FormEvent, type ReactNode } from 'react'
 import { Navigate, useLocation, useNavigate } from 'react-router-dom'
+import { ArrowRight } from 'lucide-react'
+import { OfficeScene, RisingWords } from '@/components/auth/OfficeScene'
 import { useAuthStore } from '@/stores/authStore'
 import { Button, FieldError, Input, Label } from '@/components/ui/primitives'
 
@@ -10,41 +12,83 @@ import { Button, FieldError, Input, Label } from '@/components/ui/primitives'
  * and says the same thing whether or not the email is known.
  */
 
-/** The brand panel beside the form: JustUsedTech green, the mark and a line. */
+/**
+ * The frame for the sign-in, forgot and set-password screens: a dark brand
+ * panel with a small picture of the office coming to life (OfficeScene), and
+ * the form beside it. On a phone the panel shrinks to a strip of three rooms
+ * above the form.
+ */
 export function AuthFrame({ title, subtitle, children, headingId }: { title: string; subtitle: string; children: ReactNode; headingId?: string }) {
   return (
-    <div className="grid min-h-[100dvh] bg-surface md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
-      <div aria-label="About JUSTUSED Office" role="region" className="relative hidden overflow-hidden bg-[var(--sidebar-bg)] p-10 text-white md:flex md:flex-col">
-        <span className="flex items-center gap-2.5">
+    <div className="grid min-h-[100dvh] bg-surface md:grid-cols-[minmax(0,1.05fr)_minmax(0,1fr)]">
+      <div
+        aria-label="About JUSTUSED Office"
+        role="region"
+        className="on-dark relative isolate hidden flex-col overflow-hidden bg-[var(--sidebar-bg)] px-10 py-9 text-white md:flex lg:px-14 lg:py-12"
+      >
+        <span className="relative flex items-center gap-2.5">
           {/* TODO: swap for final vector/SVG logo when client delivers it */}
           <img src="/jut-icon-mark.png" alt="" width={36} height={36} className="size-9 rounded-[10px] object-contain" />
           <span className="text-[17px] font-extrabold tracking-[0.02em]">
             JUSTUSED <span className="font-semibold opacity-80">Office</span>
           </span>
         </span>
-        <div className="mt-auto max-w-[420px]">
-          <p className="text-[34px] leading-tight font-extrabold tracking-[-0.01em]">The team, in one office.</p>
-          <p className="mt-3 text-[15px] leading-relaxed text-[var(--on-dark-muted)]">
+        <div className="relative my-auto w-full max-w-[500px] self-center py-10">
+          <OfficeScene />
+        </div>
+        <div className="relative max-w-[460px]">
+          <p className="text-[40px] leading-[1.08] font-extrabold tracking-[-0.02em] text-balance lg:text-[46px]">
+            <RisingWords text="The team, in one office." />
+          </p>
+          <p className="reveal mt-4 max-w-[38ch] text-[16px] leading-relaxed text-pretty text-[var(--on-dark-muted)]" style={{ '--i': 10 } as CSSProperties}>
             See who is in, knock on a door, and file the day’s three reports.
           </p>
         </div>
-        <span aria-hidden className="pointer-events-none absolute -right-24 -bottom-24 size-[360px] rounded-full bg-[rgba(0,166,82,0.22)] blur-[90px]" />
-        <span aria-hidden className="pointer-events-none absolute top-24 -right-10 size-[200px] rounded-full bg-[rgba(0,173,239,0.16)] blur-[80px]" />
+        {/* Soft glows in the brand's green, blue and gold, behind everything (-z-10
+            inside the isolated panel, so they never tint the text). Soft gradients,
+            not filter blur: same look, far cheaper to move. Green and blue drift
+            into place once; the faint gold one stays still. */}
+        <span
+          aria-hidden
+          className="scene-drift pointer-events-none absolute -right-72 -bottom-72 -z-10 size-[680px] bg-[radial-gradient(closest-side,rgba(0,166,82,0.26),transparent)]"
+        />
+        <span
+          aria-hidden
+          className="scene-drift-alt pointer-events-none absolute -top-16 -right-40 -z-10 size-[440px] bg-[radial-gradient(closest-side,rgba(0,173,239,0.16),transparent)]"
+        />
+        <span
+          aria-hidden
+          className="pointer-events-none absolute top-1/4 -left-64 -z-10 size-[520px] bg-[radial-gradient(closest-side,rgba(255,217,102,0.07),transparent)]"
+        />
       </div>
-      <main className="flex items-center justify-center px-5 py-12">
+      <main className="flex items-center justify-center px-5 py-10 sm:py-12">
         <div className="w-full max-w-[380px]">
-          <span className="mb-8 flex items-center gap-2 md:hidden">
-            {/* TODO: swap for final vector/SVG logo when client delivers it */}
-            <img src="/jut-icon-mark.png" alt="" width={32} height={32} className="size-8 rounded-[8px] object-contain" />
-            <span className="text-[16px] font-extrabold text-text-primary">
-              JUSTUSED <span className="font-semibold text-text-secondary">Office</span>
+          <div className="mb-8 md:hidden">
+            <span className="flex items-center gap-2">
+              {/* TODO: swap for final vector/SVG logo when client delivers it */}
+              <img src="/jut-icon-mark.png" alt="" width={32} height={32} className="size-8 rounded-[8px] object-contain" />
+              <span className="text-[16px] font-extrabold text-text-primary">
+                JUSTUSED <span className="font-semibold text-text-secondary">Office</span>
+              </span>
             </span>
-          </span>
-          <h1 id={headingId} tabIndex={-1} className="font-display text-[28px] leading-tight text-text-primary outline-none">
+            <div className="mt-5 rounded-[22px] bg-[var(--sidebar-bg)] p-2.5">
+              <OfficeScene compact />
+            </div>
+          </div>
+          <h1
+            id={headingId}
+            tabIndex={-1}
+            className="reveal font-display text-[30px] leading-tight font-extrabold tracking-[-0.01em] text-text-primary outline-none"
+            style={{ '--i': 1 } as CSSProperties}
+          >
             {title}
           </h1>
-          <p className="mt-1 text-[14px] text-text-secondary">{subtitle}</p>
-          <div className="mt-7">{children}</div>
+          <p className="reveal mt-1.5 text-[15px] text-text-secondary" style={{ '--i': 2 } as CSSProperties}>
+            {subtitle}
+          </p>
+          <div className="reveal mt-7" style={{ '--i': 3 } as CSSProperties}>
+            {children}
+          </div>
         </div>
       </main>
     </div>
@@ -129,7 +173,7 @@ export function Login() {
             <p className="rounded-[14px] bg-tint-brand px-4 py-3 text-[14px] text-text-primary">
               If {email.trim()} is on the team, a link to set a new password is on its way. It works for one hour.
             </p>
-            <Button variant="secondary" onClick={() => go('signin')}>
+            <Button variant="secondary" className="h-11 w-full" onClick={() => go('signin')}>
               Back to sign in
             </Button>
           </div>
@@ -151,7 +195,7 @@ export function Login() {
             <div id={`${id}-err`}>
               <FieldError>{problem}</FieldError>
             </div>
-            <Button type="submit" aria-disabled={sending || undefined} aria-busy={sending || undefined} className="h-11 w-full">
+            <Button type="submit" aria-disabled={sending || undefined} aria-busy={sending || undefined} className="h-12 w-full text-[15px]">
               {sending ? 'Sending…' : 'Email me a link'}
             </Button>
             <button
@@ -199,8 +243,9 @@ export function Login() {
         <div id={`${id}-err`}>
           <FieldError>{problem}</FieldError>
         </div>
-        <Button type="submit" aria-disabled={loading || undefined} aria-busy={loading || undefined} className="h-11 w-full">
+        <Button type="submit" aria-disabled={loading || undefined} aria-busy={loading || undefined} className="group h-12 w-full text-[15px]">
           {loading ? 'Signing in…' : 'Sign in'}
+          {loading ? null : <ArrowRight size={17} strokeWidth={2} aria-hidden className="cta-arrow" />}
         </Button>
         <button
           type="button"

@@ -113,7 +113,7 @@ export function SetPassword() {
             onClick={() => void onContinue()}
             aria-disabled={step === 'checking' || undefined}
             aria-busy={step === 'checking' || undefined}
-            className="h-11 w-full"
+            className="h-12 w-full text-[15px]"
           >
             {step === 'checking' ? 'Checking your link…' : 'Continue'}
           </Button>
@@ -188,7 +188,7 @@ export function SetPassword() {
         <div id={`${id}-err`}>
           <FieldError>{problem}</FieldError>
         </div>
-        <Button type="submit" aria-disabled={saving || undefined} aria-busy={saving || undefined} className="h-11 w-full">
+        <Button type="submit" aria-disabled={saving || undefined} aria-busy={saving || undefined} className="h-12 w-full text-[15px]">
           {saving ? 'Saving…' : 'Save and go to the office'}
         </Button>
       </form>
