@@ -1,0 +1,23 @@
+{
+  "rewrites": [
+    {
+      "source": "/((?!api/).*)",
+      "destination": "/index.html"
+    }
+  ],
+  "functions": {
+    "api/cron/office-alerts.ts": {
+      "maxDuration": 60,
+      "includeFiles": "src/lib/**"
+    },
+    "api/office/knock-ping.ts": {
+      "includeFiles": "src/lib/**"
+    },
+    "api/team/invite.ts": {
+      "includeFiles": "src/lib/**"
+    },
+    "api/auth/recover.ts": {
+      "includeFiles": "src/lib/**"
+    }
+  }
+}

@@ -1,0 +1,807 @@
+@import "tailwindcss";
+
+/*
+  JustUsedTech office design tokens (brand: JustUsedTech CLAUDE.md, exact hexes).
+  Ported from tito-crm's token system: same roles, JustUsedTech values.
+
+  Tailwind v4 is CSS-first: this @theme block replaces tailwind.config.js and
+  generates the same utilities (bg-forest, text-gold, font-display, ...).
+
+  Contrast ratios in the comments were measured against the actual hex values.
+  The gold rule is a hard constraint, not a preference: gold on ivory is
+  2.10:1 and fails WCAG AA for every text size. Gold is a fill, a border, or
+  an indicator on light surfaces, and text only on dark ones.
+*/
+@theme {
+  /* Brand */
+  --color-forest: #007a37; /* brand-green-dark. 5.4:1 with white. Primary action fill. */
+  --color-forest-mid: #00602c; /*  7.4:1 on the light surface. */
+  --color-forest-hover: #006b30;
+  --color-gold: #ffd966; /* brand-gold. On the dark floor only; NEVER as text on light. */
+  --color-ivory: #f6faf7;
+  --color-cream: #e7f1ea;
+  --color-ink: #0b1a12; /* 17:1 on the light surface. The dark regions. */
+  --color-stone: #59665e; /*  5.6:1 on the light surface. AA body, the floor. */
+  --color-slate-ink: #45514a; /*  8:1 on the light surface. */
+  --color-forest-faint: rgba(0, 122, 55, 0.06);
+  --color-jut-green: #00a652; /* brand-green: fills and large type only (3.1:1 on white). */
+  --color-jut-blue: #00adef; /* brand-blue: icon accent. */
+
+  /* Semantic state */
+  --color-state-success: #2d6a3e;
+  --color-state-warning: #8a6a16;
+  --color-state-danger: #8c2f22;
+  --color-state-info: #2c5670;
+
+  /* Type. Nunito everywhere (JustUsedTech rule); display is its heavy weight. */
+  --font-display: "Nunito", system-ui, -apple-system, sans-serif;
+  --font-sans: "Nunito", system-ui, -apple-system, sans-serif;
+  --font-mono: "Nunito", system-ui, -apple-system, sans-serif;
+
+  /* Radii. Rounded and friendly: no sharp corners anywhere. */
+  --radius-sm: 8px;
+  --radius-md: 14px;
+
+  /* Motion */
+  --ease-out-strong: cubic-bezier(0.23, 1, 0.32, 1);
+  --ease-drawer: cubic-bezier(0.32, 0.72, 0, 1);
+}
+
+/*
+  Role tokens.
+
+  `@theme inline` is what makes runtime theming possible: it emits
+  `bg-surface { background-color: var(--surface) }` rather than baking the
+  resolved hex into the utility. Swapping --surface under [data-theme] then
+  re-themes every usage with no component change.
+
+  The underlying names are unprefixed (--surface, not --color-surface) so a
+  role token can never collide with the hue token it points at.
+*/
+@theme inline {
+  --color-surface: var(--surface);
+  --color-surface-raised: var(--surface-raised);
+  --color-surface-sunken: var(--surface-sunken);
+  --color-surface-overlay: var(--surface-overlay);
+
+  --color-text-primary: var(--text-primary);
+  --color-text-muted: var(--text-muted);
+  --color-text-secondary: var(--text-secondary);
+  --color-text-faint: var(--text-faint);
+
+  --color-line: var(--line);
+  --color-line-strong: var(--line-strong-role);
+
+  --color-brand: var(--brand);
+  --color-brand-mid: var(--brand-mid);
+  --color-accent: var(--accent);
+
+  --color-sidebar-bg: var(--sidebar-bg);
+  --color-sidebar-text: var(--sidebar-text);
+  --color-sidebar-text-active: var(--sidebar-text-active);
+  --color-sidebar-active-bg: var(--sidebar-active-bg);
+  --color-sidebar-border: var(--sidebar-border);
+
+  --color-hover: var(--hover);
+  --color-scrim: var(--scrim);
+  --color-tint-brand: var(--tint-brand);
+  --color-tint-accent: var(--tint-accent);
+  --color-tint-danger: var(--tint-danger);
+  --color-tint-warning: var(--tint-warning);
+  --color-tint-brand-line: var(--tint-brand-line);
+  --color-tint-accent-line: var(--tint-accent-line);
+  --color-on-dark-muted: var(--on-dark-muted);
+  --color-on-dark-faint: var(--on-dark-faint);
+  --color-on-dark-line: var(--on-dark-line);
+  --color-on-dark-fill: var(--on-dark-fill);
+
+  /* Radii */
+  --radius-lg: 18px;
+  --radius-xl: 22px;
+}
+
+@layer base {
+  /*
+    Light is the default and, for now, the only measured theme. Every value
+    here is an alias of a token whose contrast was already verified, so this
+    layer is a rename and not a restyle.
+  */
+  :root {
+    --surface: var(--color-ivory);
+    --surface-raised: #ffffff;
+    --surface-sunken: var(--color-cream);
+    --surface-overlay: rgba(255, 255, 255, 0.95);
+
+    --text-primary: var(--color-ink); /* 17.0:1 on surface */
+    --text-muted: var(--color-stone); /*  5.7:1 on surface, AA floor */
+    --text-secondary: var(--color-slate-ink); /*  7.9:1 on surface */
+    --text-faint: rgba(11, 26, 18, 0.45); /* decorative only, never body */
+
+    /* Aliases the exact hairline values already in use, so migrating a
+       literal to `border-line` is a rename and not a restyle. */
+    --line: rgba(11, 26, 18, 0.08);
+    --line-strong-role: rgba(11, 26, 18, 0.16);
+
+    --brand: var(--color-forest);
+    --brand-mid: var(--color-forest-mid);
+    --accent: var(--color-gold);
+
+    /* Interaction and depth. Shadows are ink-tinted on light and become
+       near-black on dark, where a 4% ink shadow would be invisible. */
+    --hover: rgba(11, 26, 18, 0.05);
+    --scrim: rgba(11, 26, 18, 0.45);
+    --skeleton-a: rgba(11, 26, 18, 0.05);
+    --skeleton-b: rgba(11, 26, 18, 0.09);
+    --shadow-sm: 0 1px 4px rgba(11, 26, 18, 0.04);
+    --shadow-md: 0 4px 16px rgba(11, 26, 18, 0.1);
+    --shadow-lg: 0 8px 24px rgba(11, 26, 18, 0.12);
+
+    /* Brand tints. Alpha fills that carry meaning, not surface roles. */
+    --tint-brand: rgba(0, 122, 55, 0.1);
+    --tint-accent: rgba(255, 217, 102, 0.18);
+    --tint-danger: rgba(140, 47, 34, 0.08);
+    --tint-warning: rgba(138, 106, 22, 0.1);
+
+    /* Border companions. A tint and its border cannot be the same value or
+       the border disappears into the fill. */
+    --tint-brand-line: rgba(0, 122, 55, 0.22);
+    --tint-accent-line: rgba(255, 217, 102, 0.36);
+
+    /* The sidebar is a dark region in both themes, so its tokens are fixed. */
+    --sidebar-bg: #0b1a12;
+    --sidebar-text: rgba(246, 250, 247, 0.62);
+    --sidebar-text-active: #ffffff;
+    --sidebar-active-bg: rgba(255, 217, 102, 0.1);
+    --sidebar-border: rgba(246, 250, 247, 0.08);
+
+    /* Text and fills that sit on a dark region regardless of theme. */
+    --on-dark-muted: rgba(246, 250, 247, 0.6);
+    --on-dark-faint: rgba(246, 250, 247, 0.56); /* 4.9:1 on the sidebar */
+
+    /* Form field edges: 3:1 or more against the field (WCAG 1.4.11). */
+    --field-border: #7a867f;
+    --on-dark-line: rgba(246, 250, 247, 0.2);
+    --on-dark-fill: rgba(246, 250, 247, 0.1);
+  }
+
+  /*
+    Dark theme. Ratios measured against --surface (#0e1612) unless noted.
+
+    Brand forest #007a37 is 2.1% luminance and is invisible here, so `--brand`
+    lifts to forest-mid and `--brand-mid` to a brighter green. Gold inverts its
+    rule: it fails as text on ivory (2.10:1) and passes comfortably here.
+  */
+  :root[data-theme='dark'] {
+    --surface: #0e1612;
+    --surface-raised: #16201a;
+    --surface-sunken: #0a110d;
+    --surface-overlay: rgba(26, 25, 23, 0.97);
+
+    --text-primary: #f2efe8; /* 16.4:1 on surface */
+    --text-muted: rgba(242, 239, 232, 0.62); /*  6.9:1, above the AA floor */
+    --text-secondary: rgba(242, 239, 232, 0.78); /* 10.3:1 */
+    --text-faint: rgba(242, 239, 232, 0.38);
+
+    --line: rgba(242, 239, 232, 0.1);
+    --field-border: rgba(242, 239, 232, 0.45);
+    --line-strong-role: rgba(242, 239, 232, 0.18);
+
+    --brand: #2fbf6d; /*  7:1 on the dark surface. */
+    --brand-mid: #5fd391;
+    --accent: #ffd966; /* 13:1 on the dark surface. Legible as text here */
+
+    --hover: rgba(242, 239, 232, 0.06);
+    --scrim: rgba(0, 0, 0, 0.66);
+    --skeleton-a: rgba(242, 239, 232, 0.05);
+    --skeleton-b: rgba(242, 239, 232, 0.1);
+    /* Ink shadows vanish on a dark surface; these are near-black instead. */
+    --shadow-sm: 0 1px 4px rgba(0, 0, 0, 0.4);
+    --shadow-md: 0 4px 16px rgba(0, 0, 0, 0.5);
+    --shadow-lg: 0 8px 24px rgba(0, 0, 0, 0.6);
+
+    --tint-brand: rgba(0, 166, 82, 0.18);
+    --tint-accent: rgba(255, 217, 102, 0.18);
+    --tint-danger: rgba(201, 91, 74, 0.16);
+    --tint-warning: rgba(255, 217, 102, 0.14);
+    --tint-brand-line: rgba(0, 166, 82, 0.4);
+    --tint-accent-line: rgba(255, 217, 102, 0.4);
+
+    /* State colours lighten so they clear AA on a dark ground. The light
+       values are 4.5:1 on ivory and only ~2:1 here. */
+    --color-state-success: #5ba86a;
+    --color-state-warning: #d0a83f;
+    --color-state-danger: #e0806f;
+    --color-state-info: #6fa3c4;
+
+    /* The sidebar is already near-black; it sits one step below the surface
+       so the boundary still reads. */
+    --sidebar-bg: #08130d;
+  }
+
+  :root {
+    --line-hairline: rgba(11, 26, 18, 0.08);
+    --line-strong: rgba(11, 26, 18, 0.16);
+
+    /*
+      Offset for sticky page chrome. While the window is the scrollport this
+      clears the 56px app header; once main owns the scroll (step 6) the
+      header is outside the scroll box and this becomes 0.
+    */
+    /* main is the scrollport now, so the app header sits outside the scroll
+       box and page chrome sticks at its top edge. */
+    --app-sticky-top: 0rem;
+
+    /* Named z-index scale. Never an arbitrary value. */
+    --z-sticky: 10;
+    --z-dropdown: 20;
+    --z-scrim: 30;
+    --z-drawer: 40;
+    --z-toast: 50;
+  }
+
+  html {
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+  }
+
+  body {
+    background: var(--surface);
+    color: var(--text-primary);
+    font-family: var(--font-sans);
+    font-size: 14px;
+    line-height: 1.5;
+  }
+
+  /* Every number a user scans or compares uses tabular figures, so columns
+     align and a live-updating value does not shift width. */
+  .tnum {
+    font-variant-numeric: tabular-nums;
+  }
+
+  /* Lining, tabular figures for numbers a person scans. */
+  .font-display {
+    font-weight: 800;
+    letter-spacing: -0.01em;
+    font-variant-numeric: lining-nums tabular-nums;
+  }
+
+  /* One focus treatment for the whole app. Forest, not gold: gold fails
+     contrast on the ivory content surface. */
+  :focus-visible {
+    outline: 2px solid var(--brand);
+    outline-offset: 2px;
+    border-radius: 2px;
+  }
+
+  ::placeholder {
+    color: var(--text-muted);
+    opacity: 1;
+  }
+}
+
+@layer components {
+  /*
+    Three-column shell. Rows are a fixed 56px header over a single flexible
+    row; the columns collapse one at a time as width is lost, which is why
+    each breakpoint only removes a column rather than restructuring.
+  */
+  .crm-shell {
+    grid-template-rows: 4rem minmax(0, 1fr);
+  }
+  .crm-shell--with-panel {
+    grid-template-columns: 220px minmax(0, 1fr) 260px;
+  }
+  /* Collapsed leaves a rail wide enough for the reopen control. */
+  .crm-shell--panel-collapsed {
+    grid-template-columns: 220px minmax(0, 1fr) 44px;
+  }
+  .crm-shell--no-panel {
+    grid-template-columns: 220px minmax(0, 1fr);
+  }
+
+  /* Below lg the right panel is hidden by the component, so the shell is
+     two columns whether or not the route would show one. */
+  @media (max-width: 1023px) {
+    .crm-shell--with-panel,
+    .crm-shell--panel-collapsed,
+    .crm-shell--no-panel {
+      grid-template-columns: 220px minmax(0, 1fr);
+    }
+  }
+
+  /* Below md the sidebar becomes the fixed bottom tab bar. */
+  @media (max-width: 767px) {
+    .crm-shell--with-panel,
+    .crm-shell--panel-collapsed,
+    .crm-shell--no-panel {
+      grid-template-columns: minmax(0, 1fr);
+    }
+  }
+}
+
+@layer components {
+  /*
+    Travelling border glow. A conic gradient on an oversized square spins
+    behind a 1px ring mask, so the highlight appears to run the border.
+    CSS rather than a motion library: offset-path/rect() is Chromium-only,
+    and this is one decorative effect, not a reason for a 50kB dependency.
+  */
+  .ab-ring {
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    padding: 1px;
+    overflow: hidden;
+    pointer-events: none;
+    -webkit-mask:
+      linear-gradient(#000 0 0) content-box,
+      linear-gradient(#000 0 0);
+    -webkit-mask-composite: xor;
+    mask-composite: exclude;
+  }
+  .ab-spin {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    width: 240%;
+    aspect-ratio: 1;
+    translate: -50% -50%;
+    background: conic-gradient(
+      from 0deg,
+      transparent 0 62%,
+      var(--accent) 78%,
+      transparent 88% 100%
+    );
+    animation: ab-spin 3.6s linear infinite;
+  }
+  @keyframes ab-spin {
+    to {
+      rotate: 360deg;
+    }
+  }
+
+  /*
+    Row entrance. The delay is capped so a 200-row page finishes in under
+    half a second instead of staggering for six.
+  */
+  .row-in {
+    animation: row-in 240ms var(--ease-out-strong) both;
+    animation-delay: min(calc(var(--row-i, 0) * 22ms), 340ms);
+  }
+  @keyframes row-in {
+    from {
+      opacity: 0;
+      transform: translateY(6px);
+    }
+    to {
+      opacity: 1;
+      transform: none;
+    }
+  }
+}
+
+@layer utilities {
+  .hairline-b {
+    border-bottom: 1px solid var(--line);
+  }
+  .hairline-t {
+    border-top: 1px solid var(--line);
+  }
+  .hairline {
+    border: 1px solid var(--line);
+  }
+
+  /* Press feedback. 100ms, on :active, so it fires on pointer-down rather
+     than waiting for release. */
+  .press {
+    transition: transform 100ms var(--ease-out-strong);
+  }
+  .press:active:not(:disabled) {
+    transform: scale(0.97);
+  }
+
+  .skeleton {
+    background: linear-gradient(
+      90deg,
+      var(--skeleton-a) 25%,
+      var(--skeleton-b) 37%,
+      var(--skeleton-a) 63%
+    );
+    background-size: 400% 100%;
+    animation: shimmer 1200ms linear infinite;
+  }
+
+  @keyframes shimmer {
+    0% {
+      background-position: 100% 50%;
+    }
+    100% {
+      background-position: 0 50%;
+    }
+  }
+
+  /*
+    Section reveal on first paint. --i is the section index, so a page
+    orchestrates rather than flashing in as one block.
+
+    CSS rather than a motion library: these are predetermined, so they run off
+    the main thread and stay smooth while the scoreboard query is resolving.
+    The global reduced-motion block below collapses them to their final state.
+  */
+  .reveal {
+    animation: reveal 400ms var(--ease-out-strong) both;
+    animation-delay: calc(var(--i, 0) * 60ms);
+  }
+  @keyframes reveal {
+    from {
+      opacity: 0;
+      transform: translateY(12px);
+    }
+    to {
+      opacity: 1;
+      transform: none;
+    }
+  }
+
+  /* Status dot on a queue row. Attention, not decoration: only the two
+     groups that carry a deadline pulse. */
+  .pulse-dot {
+    animation: pulse-dot 1800ms ease-in-out infinite;
+  }
+  @keyframes pulse-dot {
+    0%,
+    100% {
+      transform: scale(1);
+      opacity: 1;
+    }
+    50% {
+      transform: scale(1.3);
+      opacity: 0.5;
+    }
+  }
+
+  /* The live end of a sparkline. transform-box keeps the origin at the
+     circle's own centre rather than the SVG root, which would swing it. */
+  .pulse-tip {
+    transform-box: fill-box;
+    transform-origin: center;
+    animation: pulse-tip 2000ms ease-in-out infinite;
+  }
+  @keyframes pulse-tip {
+    0%,
+    100% {
+      transform: scale(1);
+      opacity: 1;
+    }
+    50% {
+      transform: scale(1.4);
+      opacity: 0.4;
+    }
+  }
+
+  /* scaleX, not width: a transform composites, a width animation relayouts
+     the row on every frame. */
+  .bar-grow {
+    transform-origin: left center;
+    animation: bar-grow 600ms var(--ease-out-strong) both;
+    animation-delay: calc(var(--i, 0) * 80ms);
+  }
+  @keyframes bar-grow {
+    from {
+      transform: scaleX(0);
+    }
+    to {
+      transform: scaleX(1);
+    }
+  }
+
+  /* Fires once when a lead arrives over realtime, so a row that appears
+     under the reader's eye is not a silent change. */
+  .flash-new {
+    animation: flash-new 400ms var(--ease-out-strong) 1;
+  }
+  @keyframes flash-new {
+    from {
+      background-color: rgba(255, 217, 102, 0.18);
+    }
+    to {
+      background-color: transparent;
+    }
+  }
+
+  .anim-overlay-in {
+    animation: overlay-in 150ms var(--ease-out-strong);
+  }
+  .anim-modal-in {
+    animation: modal-in 200ms var(--ease-out-strong);
+  }
+  @keyframes overlay-in {
+    from {
+      opacity: 0;
+    }
+    to {
+      opacity: 1;
+    }
+  }
+  /* Starts at 0.97, never 0. Nothing in the physical world appears from
+     nothing. */
+  @keyframes modal-in {
+    from {
+      opacity: 0;
+      transform: translate(-50%, -50%) scale(0.97);
+    }
+    to {
+      opacity: 1;
+      transform: translate(-50%, -50%) scale(1);
+    }
+  }
+
+  /* Ring on arrival. Rotation only, so the bell pivots in place rather than
+     shifting the header layout around it. */
+  .anim-bell-ring {
+    animation: bell-ring 500ms var(--ease-out-strong);
+    transform-origin: 50% 20%;
+  }
+  @keyframes bell-ring {
+    0%,
+    100% {
+      transform: rotate(0deg);
+    }
+    20% {
+      transform: rotate(-14deg);
+    }
+    40% {
+      transform: rotate(14deg);
+    }
+    60% {
+      transform: rotate(-9deg);
+    }
+    80% {
+      transform: rotate(9deg);
+    }
+  }
+
+  /* The badge overshoots slightly, because it is announcing something. */
+  .anim-badge-pop {
+    animation: badge-pop 300ms var(--ease-out-strong);
+  }
+  @keyframes badge-pop {
+    0% {
+      opacity: 0;
+      transform: scale(0.5);
+    }
+    70% {
+      transform: scale(1.15);
+    }
+    100% {
+      opacity: 1;
+      transform: scale(1);
+    }
+  }
+
+  /* Enters from the right edge it is anchored to, and travels a short
+     distance: a toast that flies across the viewport reads as an event, and
+     this is an aside. */
+  .anim-toast-in {
+    animation: toast-in 200ms var(--ease-out-strong);
+  }
+  @keyframes toast-in {
+    from {
+      opacity: 0;
+      transform: translateX(12px);
+    }
+    to {
+      opacity: 1;
+      transform: translateX(0);
+    }
+  }
+
+  /* The selection bar lives at the bottom edge, so it arrives from the bottom
+     edge. Entering from anywhere else would break the link between where it
+     sits and where it came from. */
+  .anim-bar-in {
+    animation: bar-in 200ms var(--ease-out-strong);
+  }
+  @keyframes bar-in {
+    from {
+      opacity: 0;
+      transform: translate(-50%, 8px);
+    }
+    to {
+      opacity: 1;
+      transform: translate(-50%, 0);
+    }
+  }
+}
+
+@layer components {
+  /*
+    The office floor. A dark region in BOTH themes, like the sidebar: a
+    top-down plan where each office is a room, walls are the 1px gaps between
+    rooms, and a room with someone in it has its lights on and its door open.
+    Values are fixed rather than theme roles for that reason, and every text
+    colour on it was measured against the lighter of the two room fills
+    (deep JustUsedTech green #08462a): ivory 10.4:1, ivory at 0.62 alpha
+    5.0:1, gold 8.0:1, the online dot 5.8:1. The brand green #007a37 itself
+    fails here (ivory at 0.62 is 2.9:1), so the lit room is its darker sibling.
+    Walls are the dark floor showing through 1px gaps, so a part-filled last
+    row reads as open floor rather than as grey blocks.
+  */
+  .office-floor {
+    --room-fill: #08462a;
+    --room-dark: #141b13;
+    --floor: #070a06;
+    position: relative;
+    border-radius: var(--radius-xl);
+    /* Rooms are clipped to the floor's corners however the grid reflows. */
+    overflow: hidden;
+    background: var(--floor);
+    padding: 1px;
+    border: 1px solid rgba(246, 250, 247, 0.1);
+    box-shadow:
+      0 1px 2px rgba(11, 26, 18, 0.2),
+      0 18px 40px -18px rgba(11, 26, 18, 0.55);
+  }
+  /* Forest focus vanishes on a forest floor; gold is the floor's ring. */
+  .office-floor :focus-visible,
+  .on-dark :focus-visible {
+    outline-color: var(--color-gold);
+  }
+
+  .office-room {
+    --room-bg: var(--room-dark);
+    position: relative;
+    isolation: isolate;
+    background: var(--room-dark);
+    transition: background-color 400ms var(--ease-out-strong);
+  }
+  .office-room[data-lit='true'] {
+    --room-bg: var(--room-fill);
+    background:
+      radial-gradient(120% 90% at 50% 112%, rgba(255, 217, 102, 0.16), transparent 58%),
+      var(--room-fill);
+  }
+
+  /*
+    The door: a short opening in the room's bottom wall. Shut, it is wall.
+    Open, warm light sits on the threshold and spills a little into the room.
+  */
+  .office-door {
+    position: absolute;
+    bottom: -1px;
+    left: 50%;
+    z-index: 1;
+    width: 56px;
+    height: 1px;
+    translate: -50% 0;
+    background: var(--floor);
+    transition:
+      background-color 400ms var(--ease-out-strong),
+      box-shadow 400ms var(--ease-out-strong);
+  }
+  .office-room[data-lit='true'] .office-door {
+    background: var(--color-gold);
+    box-shadow: 0 -6px 18px 2px rgba(255, 217, 102, 0.35);
+  }
+
+  /* Online people breathe. Behind the avatar, transform and opacity only;
+     under reduced motion the global rule ends it at its invisible frame. */
+  .office-pulse {
+    position: absolute;
+    inset: -4px;
+    border-radius: 9999px;
+    border: 2px solid var(--pulse);
+    opacity: 0;
+    /* Two breaths on arrival, then still: motion that runs past five
+       seconds needs a pause control (WCAG 2.2.2), and a ring already says it. */
+    animation: office-pulse 2.8s var(--ease-out-strong) 2;
+  }
+  @keyframes office-pulse {
+    0% {
+      opacity: 0.55;
+      transform: scale(1);
+    }
+    70%,
+    100% {
+      opacity: 0;
+      transform: scale(1.35);
+    }
+  }
+
+  /* Rooms arrive once, in reading order, on first paint. */
+  .room-in {
+    animation: room-in 420ms var(--ease-out-strong) both;
+    animation-delay: min(calc(var(--room-i, 0) * 45ms), 360ms);
+  }
+  @keyframes room-in {
+    from {
+      opacity: 0;
+      transform: translateY(8px) scale(0.985);
+    }
+    to {
+      opacity: 1;
+      transform: none;
+    }
+  }
+
+  /* A knock: the card arrives, then the door icon raps twice. */
+  .knock-in {
+    animation: knock-in 260ms var(--ease-out-strong) both;
+  }
+  @keyframes knock-in {
+    from {
+      opacity: 0;
+      transform: translateY(10px) scale(0.98);
+    }
+    to {
+      opacity: 1;
+      transform: none;
+    }
+  }
+  .knock-rap {
+    animation: knock-rap 900ms ease-in-out 280ms 2;
+    transform-origin: 50% 90%;
+  }
+  @keyframes knock-rap {
+    0%,
+    40%,
+    100% {
+      transform: rotate(0);
+    }
+    10%,
+    30% {
+      transform: rotate(-9deg);
+    }
+    20% {
+      transform: rotate(7deg);
+    }
+  }
+
+  /* The report day: a rail joining the three checkpoints. */
+  .day-rail {
+    position: relative;
+  }
+  .day-rail::before {
+    content: '';
+    position: absolute;
+    top: 18px;
+    bottom: 18px;
+    left: 11px;
+    width: 1px;
+    background: var(--line-strong-role);
+  }
+
+  /* The office pages' sticky headers are taller than the app's usual bar;
+     keep focused and scrolled-to items out from under them. */
+  main:has(.office-page) {
+    scroll-padding-top: 6.5rem;
+  }
+
+  /* Segmented control with a sliding thumb (Reports tabs). */
+  .seg-thumb {
+    transition: transform 220ms var(--ease-out-strong);
+  }
+}
+
+/* Reduced motion means gentler, not absent: feedback stays, movement goes. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 150ms !important;
+  }
+  .press:active:not(:disabled) {
+    transform: none;
+  }
+  .skeleton {
+    animation: none;
+  }
+  /* Staggered entrances: no waiting with nothing on screen. */
+  .room-in,
+  .row-in,
+  .knock-in {
+    animation-delay: 0s !important;
+  }
+}
