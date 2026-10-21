@@ -2,6 +2,7 @@ import { Fragment, useId, useState } from 'react'
 import { Button, Select } from '@/components/ui/primitives'
 import { Modal } from '@/components/ui/Modal'
 import { useOfficeRole, useOfficeSettings } from '@/hooks/useOffice'
+import { hhmm } from '@/lib/office'
 import { useSetEnforcement, useSetShortDay } from '@/hooks/useOfficeActivity'
 import { useToastStore } from '@/stores/toastStore'
 import { cn } from '@/lib/utils'
@@ -10,7 +11,7 @@ import { cn } from '@/lib/utils'
  * Trial or enforced (0008), Mr Tito only. In trial everything is recorded
  * and nothing acts on it; enforced, a sign-out shuts the office until "I'm
  * back", a missed "still there?" ends working elsewhere, and each
- * person's day goes into his 18:30 summary email. No flag, no other email.
+ * person's day goes into his end-of-day summary email. No flag, no other email.
  */
 export function ActivitySettings() {
   const { data: settings } = useOfficeSettings()
@@ -23,6 +24,8 @@ export function ActivitySettings() {
   // Until 0008 is applied the column is not there, and there is nothing to switch.
   if (!isManager || settings?.enforce_activity === undefined) return null
   const on = settings.enforce_activity
+  // The summary goes after the end-of-day deadline (office_settings), not a fixed time.
+  const summaryAt = hhmm(settings.eod_deadline)
   const timings = [
     ['Away', 'after 10 minutes with no key, click or scroll in the office'],
     ['Signed out', `after ${settings.away_signout_minutes ?? 30} more minutes away, or ${settings.away_signout_minutes ?? 30} minutes with no sign of the office`],
@@ -48,7 +51,7 @@ export function ActivitySettings() {
       </div>
       <p className="mt-1.5 max-w-[68ch] text-[13px] text-text-secondary">
         {on
-          ? 'Someone signed out after inactivity must press "I’m back" before they show as in again, and a missed "Still there?" ends their time working elsewhere. Your 18:30 summary email shows each person’s active time, sign-outs and missed check-ins. No other email or flag.'
+          ? `Someone signed out after inactivity must press "I’m back" before they show as in again, and a missed "Still there?" ends their time working elsewhere. Your ${summaryAt} summary email shows each person’s active time, sign-outs and missed check-ins. No other email or flag.`
           : 'Sign-outs and missed check-ins are recorded and shown in Reports, but nothing acts on them: people come back in by themselves. Turn enforcement on after the trial week, once the timings look right.'}
       </p>
       <dl className="mt-3 grid gap-x-6 gap-y-1 text-[13px] sm:grid-cols-[max-content_1fr]">
@@ -71,7 +74,7 @@ export function ActivitySettings() {
         description={
           on
             ? 'Sign-outs and missed check-ins will be recorded only. Nobody has to press "I’m back".'
-            : 'From now on, anyone signed out after inactivity, or by their end-of-day report, has to press "I’m back" to show as in, and your 18:30 summary email adds each person’s active time, sign-outs and missed check-ins. Tell the team first.'
+            : `From now on, anyone signed out after inactivity, or by their end-of-day report, has to press "I’m back" to show as in, and your ${summaryAt} summary email adds each person’s active time, sign-outs and missed check-ins. Tell the team first.`
         }
         footer={
           <>
@@ -106,7 +109,7 @@ const SHORT_DAY_CHOICES = [4, 5, 6, 7] as const
 
 /**
  * Short day (0010): a signed-in day with less working time than this reads
- * "short" on the month view and, once enforced, in the 18:30 summary. Only
+ * "short" on the month view and, once enforced, in the end-of-day summary. Only
  * once 0010 is applied (the setting is there).
  */
 function ShortDay() {
@@ -115,6 +118,7 @@ function ShortDay() {
   const showToast = useToastStore((s) => s.showToast)
   const id = useId()
   if (settings?.short_day_minutes === undefined) return null
+  const summaryAt = hhmm(settings.eod_deadline)
   const value = settings.short_day_minutes === null ? '' : String(settings.short_day_minutes)
   return (
     <div className="hairline-t mt-4 flex flex-wrap items-end gap-3 pt-4">
@@ -150,7 +154,7 @@ function ShortDay() {
         </Select>
       </div>
       <p id={`${id}-short-hint`} className="min-w-[220px] flex-1 text-[12px] text-text-muted">
-        Marks a day with a sign-in but less working time than this, on the month view and (once enforced) in your 18:30 summary.
+        Marks a day with a sign-in but less working time than this, on the month view and (once enforced) in your {summaryAt} summary.
         A prompt for a conversation: no flag and no email to them.
       </p>
     </div>

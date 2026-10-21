@@ -33,7 +33,7 @@ All of this is done by hand; nothing here holds database credentials.
    - Realtime > Settings: leave "Allow public access" ON (the office channel is private and
      guarded by its own RLS).
 2. **Migrations**, in the SQL editor, each file as one run, in order:
-   `0001_team`, `0002_office_reports`, then `0004` to `0013`. **Leave `0003` for step 6.**
+   `0001_team`, `0002_office_reports`, then `0004` to `0014`. **Leave `0003` for step 6.**
    Each runs in a transaction and checks itself; a failure changes nothing.
 3. **Mr Tito** (0001's and 0002's headers):
    ```sql
@@ -83,6 +83,17 @@ back in progress. The giver (or an admin) can cancel a task that is not yet appr
   10 MB each), shown as thumbnails to the people on the task and the admins. Stored in the private
   `task-proof` bucket; an image uploaded but never handed in is removed by the alerts route after a day.
 
+## The day's hours, and work started before sign-in (0014)
+
+Since 0014 the day is: sign-in at 11:00 (on time until 11:15), midday report 15:00 to 16:00, end-of-day
+report from 19:00 (on time until 20:30). Mr Tito's summary goes after 20:30 and the time figures cover
+11:00 to 20:30. Every screen and email reads these from `office_settings`; change them there.
+
+Nothing is recorded before someone files their sign-in. Someone who started earlier says so under
+**Your time in the office** ("I started before 11:00": a time and what on). Mr Tito sees it on the Day
+view and in his summary as "said by them", beside the evidence the office already has: the time of
+their first task step, knock or chat message that day.
+
 ## Ratings and the weekly leaderboard (0012)
 
 The person who gave a task (or an admin) rates it 1 to 5 stars once it is approved; changeable for 7
@@ -119,7 +130,7 @@ The 10 minutes to "away" is in the screens (`src/lib/presence.ts`), not the data
 
 ## Rolling back
 
-`supabase/rollbacks/`, one per migration, **newest first** (0013 down to 0002). Each is one
+`supabase/rollbacks/`, one per migration, **newest first** (0014 down to 0002). Each is one
 transaction. 0002's and 0007's leave their storage buckets (`proof`, `avatars`): empty and delete
 them in Storage afterwards (Supabase refuses SQL deletes on storage tables).
 

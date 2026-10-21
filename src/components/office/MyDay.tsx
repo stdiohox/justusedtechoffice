@@ -12,7 +12,8 @@ import {
   type ReportWithFiles,
 } from '@/hooks/useOffice'
 import { useNow } from '@/hooks/useNow'
-import { REPORT_KINDS, REPORT_LABEL, checkpointState, checkpointWindow, isWorkday, needsProof } from '@/lib/office'
+import { REPORT_KINDS, REPORT_LABEL, checkpointState, checkpointWindow, hhmm, isWorkday, needsProof } from '@/lib/office'
+import { EarlyStart } from '@/components/office/EarlyStart'
 import { localParts } from '@/lib/timezones'
 import { useAuthStore } from '@/stores/authStore'
 import type { OfficeSettings, ReportKind } from '@/types/database'
@@ -257,7 +258,7 @@ function YourTime({ settings, date }: { settings: OfficeSettings; date: string }
         Your time in the office
       </h2>
       <p className="mt-0.5 text-[12px] text-text-muted">
-        On the server's clock, 09:00 to 18:30, to the nearest 5 minutes. Mr Tito sees exactly these figures, with your reports and your notes.
+        On the server's clock, {hhmm(settings.signin_reminder)} to {hhmm(settings.eod_deadline)}, to the nearest 5 minutes. Mr Tito sees exactly these figures, with your reports and your notes.
       </p>
       <h3 className="mt-4 text-[12px] font-medium tracking-[0.06em] text-text-secondary uppercase">Today</h3>
       {today ? <TimeLine t={today} className="mt-1.5" /> : <p className="mt-1 text-[13px] text-text-muted">Nothing recorded yet today.</p>}
@@ -272,6 +273,7 @@ function YourTime({ settings, date }: { settings: OfficeSettings; date: string }
         <TimeLegend className="mt-2" />
       </details>
       <NoticeLink className="mt-1 block" />
+      <EarlyStart settings={settings} date={date} />
       {notes?.available ? (
         <>
           <DayNotes notes={notes.rows.filter((n) => n.work_date === date)} zone={settings.timezone} label="Your notes today" />
