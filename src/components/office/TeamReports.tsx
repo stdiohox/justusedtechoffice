@@ -5,7 +5,9 @@ import { ReportDetail, StatusChip } from '@/components/office/ReportBits'
 import { useOfficePresenceDay, useOfficeRange, type OfficeMemberWithUser, type OfficeRange, type PresenceDay } from '@/hooks/useOffice'
 import { summarizeDay } from '@/lib/presence'
 import { useNow } from '@/hooks/useNow'
-import { REPORT_KINDS, REPORT_LABEL, checkpointState, officeClock, type CheckpointState } from '@/lib/office'
+import { REPORT_KINDS, REPORT_LABEL, checkpointState, hhmm, officeClock, type CheckpointState } from '@/lib/office'
+import { StartLine } from '@/components/office/EarlyStart'
+import { useDayStarts } from '@/hooks/useDayStarts'
 import { addDays, localParts, weekdayOf } from '@/lib/timezones'
 import type { OfficeSettings, ReportKind } from '@/types/database'
 import { Avatar, Pips } from '@/components/office/OfficeVisuals'
@@ -94,6 +96,9 @@ export function TeamDay({
 }) {
   const today = useToday(settings)
   const { data, isLoading, isError, error } = useOfficeRange(date, date, true)
+  // Work started before sign-in (0014): what each person said, and the evidence.
+  const { data: starts } = useDayStarts(date, date)
+  const startOf = (id: string) => starts?.rows.find((s) => s.user_id === id && s.work_date === date)
   const { data: presence } = useOfficePresenceDay(settings, date)
   const { data: summary } = useTimeSummary(date, date, true)
   const { data: notes } = useDayNotes(date, date, true)
@@ -166,6 +171,7 @@ export function TeamDay({
                   ) : (
                     <PresenceLine day={presence} userId={r.user_id} zone={settings.timezone} />
                   )}
+                  <StartLine start={startOf(r.user_id)} zone={settings.timezone} officialStart={hhmm(settings.signin_reminder)} />
                 </div>
               </div>
               {summary?.available && timeOf(r.user_id) ? <TimeLine t={timeOf(r.user_id)!} className="mt-3" /> : null}
@@ -340,7 +346,13 @@ export function MemberWeek({
       )}
 
       {summary?.available && !isLoading ? (
-        <WeekTime days={days.map((d) => d.work_date)} rows={weekTime} notes={weekNotes} zone={settings.timezone} />
+        <WeekTime
+          days={days.map((d) => d.work_date)}
+          rows={weekTime}
+          notes={weekNotes}
+          zone={settings.timezone}
+          hours={`${hhmm(settings.signin_reminder)} to ${hhmm(settings.eod_deadline)}`}
+        />
       ) : null}
     </div>
   )
@@ -363,7 +375,20 @@ const dayLabel = (date: string) =>
  * The week's time in the office (0009), day by day and in total, with the
  * check-ins in the same rows.
  */
-function WeekTime({ days, rows, notes, zone }: { days: string[]; rows: OfficeTimeDay[]; notes: OfficeDayNote[]; zone: string }) {
+function WeekTime({
+  days,
+  rows,
+  notes,
+  zone,
+  hours,
+}: {
+  days: string[]
+  rows: OfficeTimeDay[]
+  notes: OfficeDayNote[]
+  zone: string
+  /** "11:00 to 20:30", from office_settings. */
+  hours: string
+}) {
   const total = sumDays(rows)
   const cell = 'py-2.5 pr-4 text-right'
   return (
@@ -372,7 +397,7 @@ function WeekTime({ days, rows, notes, zone }: { days: string[]; rows: OfficeTim
         Time in the office
       </h2>
       <p className="text-[12px] text-text-muted">
-        Worked out on the server's clock, inside 09:00 to 18:30 office time, to the nearest 5 minutes. A guide, not a verdict: read it with the reports and the notes.
+        Worked out on the server's clock, inside {hours} office time, to the nearest 5 minutes. A guide, not a verdict: read it with the reports and the notes.
       </p>
       {/* Focusable and named, so a keyboard can scroll it sideways on a phone. */}
       <div

@@ -44,7 +44,8 @@ import type {
  *      listing them, then notified_at. A missed checkpoint also emails the
  *      person who missed it.
  *   2. Reminders, once per checkpoint per day, to everyone due who has not
- *      filed: sign-in at 09:00, midday when it opens at 13:00, EOD at 17:00.
+ *      filed: at the sign-in reminder, when midday opens, when EOD opens
+ *      (office_settings; 11:00, 15:00 and 19:00 since 0014).
  *   3. The day's summary to Mr Tito, once, after the EOD deadline. Once
  *      enforcement is on (office_settings.enforce_activity, 0008), each
  *      person's active time, sign-outs and missed check-ins for the day are
@@ -293,11 +294,37 @@ async function dayActivity(ctx: Ctx): Promise<Map<string, OfficeTimeDay> | null>
   return new Map(((data ?? []) as OfficeTimeDay[]).map((t) => [t.user_id, t]))
 }
 
+/**
+ * Work started before sign-in (0014), for the summary: what each person said,
+ * beside their first task step, knock or chat that day. Best effort: before
+ * 0014, or on any error, the summary goes without it.
+ */
+async function dayStarts(ctx: Ctx): Promise<Map<string, string>> {
+  const out = new Map<string, string>()
+  const { data, error } = await ctx.db.rpc('office_day_starts_range', { p_from: ctx.date, p_to: ctx.date })
+  if (error) {
+    if (!(error.code && NO_FUNCTION.has(error.code))) ctx.problems.push(`digest: early starts not read (${error.message}); sent without them`)
+    return out
+  }
+  const start = hhmm(ctx.settings.signin_reminder)
+  const at = (iso: string) => localParts(ctx.settings.timezone, new Date(iso)).time
+  for (const r of (data ?? []) as { user_id: string; started_at: string | null; note: string | null; first_work_at: string | null }[]) {
+    const said = r.started_at ? at(r.started_at) : null
+    const first = r.first_work_at ? at(r.first_work_at) : null
+    // Beside a declared start the evidence always shows; with nothing said, only work before the start.
+    const early = first && first < start ? first : null
+    if (said) out.set(r.user_id, `started ${said}, said by them${first ? ` (first work seen ${first})` : ''}`)
+    else if (early) out.set(r.user_id, `first work seen ${early}, before ${start}`)
+  }
+  return out
+}
+
 async function sendDigest(ctx: Ctx, due: OfficeRosterDay[], reports: OfficeReport[]): Promise<void> {
   if (ctx.time <= hhmm(ctx.settings.eod_deadline)) return
   const key = `digest:${ctx.date}`
   if (!(await claim(ctx.db, key))) return
   const activity = await dayActivity(ctx)
+  const early = await dayStarts(ctx)
 
   const cell = (r: OfficeReport | undefined) =>
     !r ? 'not filed' : r.timing === 'late' ? `late ${localParts(ctx.settings.timezone, new Date(r.submitted_at)).time}` : 'on time'
@@ -319,10 +346,12 @@ async function sendDigest(ctx: Ctx, due: OfficeRosterDay[], reports: OfficeRepor
             short: ctx.settings.short_day_minutes ? (t ? isShortDay(t, ctx.settings.short_day_minutes) : false) : undefined,
           }
         : undefined,
+      early: early.get(d.user_id),
     }
   })
   const complete = due.filter((d) => REPORT_KINDS.every((k) => reports.some((r) => r.user_id === d.user_id && r.kind === k)))
   const email = officeDigest({
+    hours: `${hhmm(ctx.settings.signin_reminder)} and ${hhmm(ctx.settings.eod_deadline)}`,
     date: ctx.date,
     due: due.length,
     complete: complete.length,
@@ -350,7 +379,7 @@ interface BoardDbRow {
 /** PostgREST / Postgres: "no function with those arguments" (0012 not applied). */
 const NO_FUNCTION = new Set(['42883', 'PGRST202'])
 
-/** "Fri 16 Oct, 17:00 to Fri 23 Oct, 17:00", office time. */
+/** "Fri 16 Oct, 20:30 to Fri 23 Oct, 20:30", office time. */
 function weekLabel(zone: string, from: string, to: string): string {
   const one = (iso: string) => {
     const d = new Date(iso)
@@ -361,9 +390,9 @@ function weekLabel(zone: string, from: string, to: string): string {
 }
 
 /**
- * The week that just closed (Friday 17:00 to Friday 17:00, 0012; scored on
+ * The week that just closed (Friday to Friday at the end-of-day deadline, 0014; scored on
  * tasks and reports), once, on
- * Friday from 17:00 office time: each person on the board gets their place,
+ * Friday after the end-of-day deadline (eod_deadline): each person on the board gets their place,
  * their numbers, the stars they were given and the top three (the winner, a
  * version that says so); Mr Tito and every admin get the whole table.
  * Read before claiming: without 0012 there is nothing to send, and nothing
@@ -372,7 +401,8 @@ function weekLabel(zone: string, from: string, to: string): string {
  */
 async function sendLeaderboard(ctx: Ctx): Promise<void> {
   const now = localParts(ctx.settings.timezone, new Date())
-  if (now.weekday !== 5 || now.time < '17:00') return
+  // The week closes when the end-of-day report is due (0014: 20:30 here).
+  if (now.weekday !== 5 || now.time <= hhmm(ctx.settings.eod_deadline)) return
   const key = `leaderboard:${ctx.date}`
 
   const { data, error } = await ctx.db.rpc('office_leaderboard', { p_weeks_ago: 1 })

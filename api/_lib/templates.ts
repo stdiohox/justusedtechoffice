@@ -178,10 +178,14 @@ export interface OfficeDigestRow {
    * check-ins. Absent in trial mode, and the columns with it.
    */
   activity?: { active: string; signouts: number; missed: number; short?: boolean }
+  /** 0014: "started 07:40, said by them (first work seen 07:52)", or absent. */
+  early?: string
 }
 
 /** The day's summary for Mr Tito, after the EOD deadline. */
 export function officeDigest(i: {
+  /** The working window, "11:00 and 20:30" (office_settings). */
+  hours: string
   date: string
   due: number
   complete: number
@@ -215,13 +219,13 @@ export function officeDigest(i: {
         .map((h) => `<td style="padding:0 10px 6px 0;font-size:12px;color:${MUTED};text-transform:uppercase;letter-spacing:0.06em;">${h}</td>`)
         .join('')}</tr>
 ${i.rows
-  .map((r) => `      <tr><td style="padding:6px 10px 6px 0;border-top:1px solid ${RULE};font-size:14px;font-weight:600;">${esc(r.name)}</td>${cell(r.signin)}${cell(r.midday)}${cell(r.eod)}${activityCells(r)}</tr>`)
+  .map((r) => `      <tr><td style="padding:6px 10px 6px 0;border-top:1px solid ${RULE};font-size:14px;font-weight:600;">${esc(r.name)}${r.early ? `<br><span style="font-weight:400;font-size:12px;color:${MUTED};">${esc(r.early)}</span>` : ''}</td>${cell(r.signin)}${cell(r.midday)}${cell(r.eod)}${activityCells(r)}</tr>`)
   .join('\n')}
     </table>\n`
     : ''
   const shortHours = i.shortDayMinutes ? `${Math.round((i.shortDayMinutes / 60) * 10) / 10} hours` : null
   const activityNote = withActivity
-    ? `Active is time with input in the office between 09:00 and 18:30. Sign-outs count those after 30 minutes away or with the office closed.${
+    ? `Active is time with input in the office between ${i.hours}. Sign-outs count those after 30 minutes away or with the office closed.${
         withShort && shortHours ? ` A short day is a signed-in day with under ${shortHours} of working time (active, do not disturb and working elsewhere).` : ''
       } Time working elsewhere, do not disturb and the notes people added are in Reports.`
     : null
@@ -235,7 +239,7 @@ ${i.rows
     text: [
       head,
       '',
-      ...i.rows.map((r) => `${r.name}: sign-in ${r.signin} · midday ${r.midday} · end of day ${r.eod}${activityText(r)}`),
+      ...i.rows.map((r) => `${r.name}: sign-in ${r.signin} · midday ${r.midday} · end of day ${r.eod}${activityText(r)}${r.early ? ` · ${r.early}` : ''}`),
       ...(activityNote ? ['', activityNote] : []),
       '',
       `Open the day in Reports: ${i.reportsUrl}`,

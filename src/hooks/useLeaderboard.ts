@@ -4,7 +4,7 @@ import type { LeaderboardRow } from '@/types/database'
 
 /**
  * The weekly leaderboard (0012, scored on tasks and reports):
- * Friday 17:00 to Friday 17:00, office time.
+ * Friday to Friday at the end-of-day deadline, office time.
  * weeksAgo 0 is the week so far, 1 the week that last closed. The database
  * does the counting (office_leaderboard) and decides who may read it: the
  * whole team, the whole table. "Not available" until 0012 is applied, so the
