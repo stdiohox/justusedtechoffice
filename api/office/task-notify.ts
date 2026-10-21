@@ -5,7 +5,8 @@ import { officeTask, type TaskEmailKind } from '../_lib/templates.js'
 
 /**
  * A task step by email (0011): a new task to the assignee, "done, please
- * check" to the giver, "sent back" to the assignee. Called by the actor's
+ * check" to the giver, "sent back" to the assignee, and (0012) the stars a
+ * task was given, to the assignee. Called by the actor's
  * browser right after the step.
  *
  * The body names one event and nothing else. The update below is the whole
@@ -17,7 +18,7 @@ import { officeTask, type TaskEmailKind } from '../_lib/templates.js'
  * The link comes from OFFICE_BASE_URL, never from the Host header.
  */
 
-const EMAILING: TaskEmailKind[] = ['assigned', 'done', 'returned']
+const EMAILING: TaskEmailKind[] = ['assigned', 'done', 'returned', 'rated']
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' })
@@ -50,12 +51,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     .in('kind', EMAILING)
     .is('emailed_at', null)
     .gt('created_at', new Date(now.getTime() - 3_600_000).toISOString())
-    .select('task_id, kind, note')
+    .select('task_id, kind, note, created_at')
   if (error) {
     console.error('task-notify claim:', error.message)
     return res.status(500).json({ error: 'Could not send the email.' })
   }
-  const event = (claimed as { task_id: string; kind: TaskEmailKind; note: string | null }[] | null)?.[0]
+  const event = (claimed as { task_id: string; kind: TaskEmailKind; note: string | null; created_at: string }[] | null)?.[0]
   if (!event) return res.status(409).json({ error: 'That step was already emailed, or is not yours.' })
   const release = () => db.from('office_task_events').update({ emailed_at: null }).eq('id', eventId)
 
@@ -110,13 +111,60 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     return res.status(200).json({ sent: false })
   }
 
+  // Only a 'rated' step needs the stars, and only 0012 has them: read them
+  // separately, so the other steps keep working on a database without 0012.
+  let stars: number | null = null
+  let comment: string | null = event.note
+  if (event.kind === 'rated') {
+    // One rating email per task a day: changing the stars again is not news
+    // worth another email. The latch stays set; nothing is sent.
+    const { count: recent, error: recentErr } = await db
+      .from('office_task_events')
+      .select('id', { count: 'exact', head: true })
+      .eq('task_id', event.task_id)
+      .eq('kind', 'rated')
+      .neq('id', eventId)
+      .gt('emailed_at', new Date(now.getTime() - 86_400_000).toISOString())
+    if (recentErr) {
+      console.error('task-notify rating throttle:', recentErr.message)
+      await release()
+      return res.status(500).json({ error: 'Could not send the email.' })
+    }
+    if (recent) return res.status(200).json({ sent: false })
+    const { data: rated, error: ratedErr } = await db.from('office_tasks').select('rating, rating_note').eq('id', event.task_id).maybeSingle()
+    const r = rated as { rating: number | null; rating_note: string | null } | null
+    if (ratedErr || !r?.rating) {
+      if (ratedErr) console.error('task-notify rating:', ratedErr.message)
+      await release()
+      return res.status(500).json({ error: 'Could not send the email.' })
+    }
+    stars = r.rating
+    comment = r.rating_note
+  }
+
+  // 'done' (0013): how many images came with it. Best effort: before 0013,
+  // or on any error, the email simply does not mention them.
+  let images = 0
+  if (event.kind === 'done') {
+    // This hand-in's images only: complete_task records them in the same
+    // transaction as the 'done' event, so they share its time.
+    const { count: n } = await db
+      .from('office_task_files')
+      .select('id', { count: 'exact', head: true })
+      .eq('task_id', event.task_id)
+      .gte('created_at', event.created_at)
+    images = n ?? 0
+  }
+
   const email = officeTask({
     kind: event.kind,
     recipientName: recipient.full_name,
     actorName: (caller as { full_name?: string }).full_name ?? 'Someone',
     title: t.title,
     dueOn: event.kind === 'assigned' ? t.due_on : null,
-    note: event.note,
+    note: comment,
+    stars,
+    images,
     tasksUrl: `${base}/tasks`,
   })
   const sendErr = await new Resend(resendKey).emails

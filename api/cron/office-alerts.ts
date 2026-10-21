@@ -4,12 +4,16 @@ import { createHash, timingSafeEqual } from 'node:crypto'
 import { Resend } from 'resend'
 import { isRefusal, officeEnv, serviceClient } from '../_lib/server.js'
 import {
+  leaderboardPersonal,
+  leaderboardTable,
   officeAlerts,
   officeDigest,
   officeMissedNudge,
   officeReminder,
+  type BoardRow,
   type Email,
   type OfficeAlertLine,
+  type RatingLine,
 } from '../_lib/templates.js'
 import { REPORT_KINDS, REPORT_LABEL, checkpointWindow, hhmm, isWorkday, needsProof } from '../../src/lib/office.js'
 import { localParts } from '../../src/lib/timezones.js'
@@ -95,6 +99,8 @@ interface Ctx {
   date: string
   time: string
   reportsUrl: string
+  /** 0012: the Friday leaderboard emails link here. */
+  boardUrl: string
   /** OFFICE_FROM_EMAIL, checked when the run starts. */
   from: string
   names: Map<string, string>
@@ -328,7 +334,159 @@ async function sendDigest(ctx: Ctx, due: OfficeRosterDay[], reports: OfficeRepor
   if (!(await toManager(ctx, email, `office-digest/${ctx.date}`))) await release(ctx.db, key)
 }
 
-/* ------------------------------------------------------------- 4. purge */
+/* ------------------------------------------------------- 4. leaderboard */
+
+interface BoardDbRow {
+  user_id: string
+  full_name: string
+  tasks_done: number
+  avg_rating: number | string | null
+  reports_on_time: number
+  points: number
+  starts_at: string
+  ends_at: string
+}
+
+/** PostgREST / Postgres: "no function with those arguments" (0012 not applied). */
+const NO_FUNCTION = new Set(['42883', 'PGRST202'])
+
+/** "Fri 16 Oct, 17:00 to Fri 23 Oct, 17:00", office time. */
+function weekLabel(zone: string, from: string, to: string): string {
+  const one = (iso: string) => {
+    const d = new Date(iso)
+    const day = d.toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short', timeZone: zone })
+    return `${day}, ${localParts(zone, d).time}`
+  }
+  return `${one(from)} to ${one(to)}`
+}
+
+/**
+ * The week that just closed (Friday 17:00 to Friday 17:00, 0012; scored on
+ * tasks and reports), once, on
+ * Friday from 17:00 office time: each person on the board gets their place,
+ * their numbers, the stars they were given and the top three (the winner, a
+ * version that says so); Mr Tito and every admin get the whole table.
+ * Read before claiming: without 0012 there is nothing to send, and nothing
+ * is claimed. A failed send releases the claim for the next run; Resend's
+ * idempotency keys stop the people already emailed getting it twice.
+ */
+async function sendLeaderboard(ctx: Ctx): Promise<void> {
+  const now = localParts(ctx.settings.timezone, new Date())
+  if (now.weekday !== 5 || now.time < '17:00') return
+  const key = `leaderboard:${ctx.date}`
+
+  const { data, error } = await ctx.db.rpc('office_leaderboard', { p_weeks_ago: 1 })
+  if (error) {
+    if (!(error.code && NO_FUNCTION.has(error.code))) ctx.problems.push(`leaderboard: ${error.message}`)
+    return
+  }
+  const board = (data ?? []) as BoardDbRow[]
+  if (!board.length) return
+  if (!(await claim(ctx.db, key))) return
+
+  try {
+    const from = board[0].starts_at
+    const to = board[0].ends_at
+    const week = weekLabel(ctx.settings.timezone, from, to)
+    const rows: BoardRow[] = board.map((r) => ({
+      name: r.full_name,
+      points: r.points,
+      tasks: r.tasks_done,
+      avgRating: r.avg_rating === null ? null : Number(r.avg_rating),
+      reports: r.reports_on_time,
+    }))
+
+    // Addresses: everyone on the board, and every admin (the table).
+    const { data: users, error: uErr } = await ctx.db
+      .from('profiles')
+      .select('id, full_name, email, role, deactivated_at')
+      .is('deactivated_at', null)
+    if (uErr) throw new Error(`users: ${uErr.message}`)
+    const byId = new Map(((users ?? []) as { id: string; full_name: string; email: string; role: string }[]).map((u) => [u.id, u]))
+
+    // The stars that counted this week: the same rule as the points (0012),
+    // tasks approved in the week and rated before it closed.
+    const { data: rated, error: rErr } = await ctx.db
+      .from('office_tasks')
+      .select('title, rating, rating_note, rated_by, assigned_to')
+      .eq('status', 'approved')
+      .not('rating', 'is', null)
+      .gte('closed_at', from)
+      .lt('closed_at', to)
+      .lt('rated_at', to)
+    if (rErr) throw new Error(`ratings: ${rErr.message}`)
+    const ratingsFor = (uid: string): RatingLine[] =>
+      ((rated ?? []) as { title: string; rating: number; rating_note: string | null; rated_by: string | null; assigned_to: string }[])
+        .filter((t) => t.assigned_to === uid)
+        .map((t) => ({ title: t.title, stars: t.rating, note: t.rating_note, by: (t.rated_by && byId.get(t.rated_by)?.full_name) || 'Someone' }))
+
+    const top = rows.slice(0, 3)
+    const best = rows[0].points
+    let ok = true
+    const sentBefore = ctx.sent.length
+    for (const [k, r] of board.entries()) {
+      const u = byId.get(r.user_id)
+      if (!u?.email) continue
+      const rank = 1 + rows.filter((x) => x.points > r.points).length
+      const email = leaderboardPersonal({
+        name: u.full_name,
+        rank,
+        of: rows.length,
+        row: rows[k],
+        top,
+        ratings: ratingsFor(r.user_id),
+        week,
+        boardUrl: ctx.boardUrl,
+        winner: best > 0 && r.points === best,
+      })
+      ok = (await send(ctx, { name: u.full_name, email: u.email }, email, `leaderboard/${ctx.date}/${r.user_id}`)) && ok
+    }
+
+    // The whole table: Mr Tito (at OFFICE_MANAGER_EMAIL when set), then every other admin.
+    if (ctx.manager) {
+      ok = (await send(ctx, ctx.manager, leaderboardTable({ name: ctx.manager.name, rows, week, boardUrl: ctx.boardUrl }), `leaderboard-table/${ctx.date}/manager`)) && ok
+    }
+    for (const u of byId.values()) {
+      if (u.role !== 'manager' || u.id === ctx.settings.manager_id || !u.email) continue
+      ok = (await send(ctx, { name: u.full_name, email: u.email }, leaderboardTable({ name: u.full_name, rows, week, boardUrl: ctx.boardUrl }), `leaderboard-table/${ctx.date}/${u.id}`)) && ok
+    }
+    // Nothing went: try again on the next run. Some went: keep the claim, so
+    // the people already emailed are not emailed again, and report the rest.
+    if (!ok && ctx.sent.length === sentBefore) await release(ctx.db, key)
+  } catch (err) {
+    await release(ctx.db, key)
+    ctx.problems.push(`leaderboard: ${err instanceof Error ? err.message : String(err)}`)
+  }
+}
+
+/* ---------------------------------------------- 5. task proof clean-up */
+
+/**
+ * Images uploaded as task proof but never handed in (0013), once a day: an
+ * upload that was abandoned, a hand-in that failed, or a task that was
+ * deleted. The list comes from office_task_proof_orphans(); the files go
+ * through the Storage API, which SQL cannot do. Before 0013, nothing to do.
+ */
+async function purgeTaskProof(ctx: Ctx): Promise<void> {
+  const key = `task-proof-purge:${ctx.date}`
+  const { data, error } = await ctx.db.rpc('office_task_proof_orphans', { p_limit: 500 })
+  if (error) {
+    if (!(error.code && NO_FUNCTION.has(error.code))) ctx.problems.push(`task proof: ${error.message}`)
+    return
+  }
+  const paths = (data ?? []) as string[]
+  if (!paths.length) return
+  if (!(await claim(ctx.db, key))) return
+  const { error: rmErr } = await ctx.db.storage.from('task-proof').remove(paths)
+  if (rmErr) {
+    await release(ctx.db, key)
+    ctx.problems.push(`task proof: ${rmErr.message}`)
+    return
+  }
+  ctx.sent.push(`removed ${paths.length} task proof images never handed in`)
+}
+
+/* ------------------------------------------------------------- 6. purge */
 
 async function purgeProof(ctx: Ctx): Promise<void> {
   const key = `purge:${ctx.date}`
@@ -416,6 +574,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       date: now.date,
       time: now.time,
       reportsUrl: `${base}/reports`,
+      boardUrl: `${base}/leaderboard`,
       from,
       names: new Map(members.map((m) => [m.user_id, m.user?.full_name ?? 'Someone'])),
       people: new Map(
@@ -437,6 +596,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       await sendDigest(ctx, due, reports)
     }
 
+    await sendLeaderboard(ctx)
+    await purgeTaskProof(ctx)
     await purgeProof(ctx)
 
     const status = ctx.problems.length ? 500 : 200

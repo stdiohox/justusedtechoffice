@@ -1,6 +1,6 @@
-import { useId, useRef, useState, type FormEvent, type ReactNode, type RefObject } from 'react'
+import { useEffect, useId, useRef, useState, type FormEvent, type ReactNode, type RefObject } from 'react'
 import { useSearchParams } from 'react-router-dom'
-import { CalendarDays, ExternalLink, ListChecks, Plus } from 'lucide-react'
+import { CalendarDays, ExternalLink, ImagePlus, ListChecks, Plus, Star, X } from 'lucide-react'
 import { Button, EmptyState, FieldError, Input, Label, Select, Skeleton, Textarea } from '@/components/ui/primitives'
 import { Modal } from '@/components/ui/Modal'
 import { Photo } from '@/components/ui/Photo'
@@ -8,6 +8,12 @@ import { useTeam } from '@/hooks/useTeam'
 import { useOfficeSettings } from '@/hooks/useOffice'
 import {
   useCancelTask,
+  useRateTask,
+  useTaskFiles,
+  PROOF_MAX_BYTES,
+  PROOF_MAX_FILES,
+  proofType,
+  type TaskImage,
   useCompleteTask,
   useCreateTask,
   useIsTaskAdmin,
@@ -25,6 +31,7 @@ import {
   EVENT_LABEL,
   STATUS_LABEL,
   canCancel,
+  canRate,
   canReview,
   dueLabel,
   isClosed,
@@ -84,6 +91,185 @@ function Person({ id, name }: { id: string; name: string }) {
   )
 }
 
+/* ----------------------------------------------------------------- stars (0012) */
+
+/**
+ * Filled stars in the dark gold (state-warning): the brand gold is under 3:1
+ * on the light surface, and the stars are the information, not decoration.
+ */
+function Stars({ value, size = 14 }: { value: number; size?: number }) {
+  return (
+    <span className="inline-flex items-center gap-0.5" role="img" aria-label={`${value} of 5 stars`}>
+      {[1, 2, 3, 4, 5].map((n) => (
+        <Star
+          key={n}
+          size={size}
+          strokeWidth={1.75}
+          aria-hidden
+          className={n <= value ? 'fill-[var(--color-state-warning)] text-state-warning' : 'text-text-muted'}
+        />
+      ))}
+    </span>
+  )
+}
+
+/** Five radio buttons drawn as stars: arrow keys move between them, as for any radio group. */
+function StarPicker({
+  value,
+  onChange,
+  name,
+  errorId,
+}: {
+  value: number
+  onChange: (n: number) => void
+  name: string
+  /** The error under the group, when there is one. */
+  errorId?: string
+}) {
+  return (
+    <fieldset aria-describedby={errorId}>
+      <legend className="mb-1.5 block text-[11px] font-medium tracking-[0.08em] text-text-secondary uppercase">Stars</legend>
+      <div className="flex gap-1">
+        {[1, 2, 3, 4, 5].map((n) => (
+          <label
+            key={n}
+            className="press cursor-pointer rounded-[8px] p-1 transition-colors duration-150 hover:bg-[var(--hover)] has-[input:focus-visible]:ring-2 has-[input:focus-visible]:ring-brand has-[input:focus-visible]:ring-offset-2 has-[input:focus-visible]:ring-offset-surface-sunken max-sm:p-2"
+          >
+            {/* Focus lands on the chosen star, or the first, when the form opens. */}
+            <input
+              type="radio"
+              name={name}
+              value={n}
+              checked={value === n}
+              onChange={() => onChange(n)}
+              autoFocus={value ? value === n : n === 1}
+              className="sr-only"
+            />
+            <Star
+              size={26}
+              strokeWidth={1.75}
+              aria-hidden
+              className={n <= value ? 'fill-[var(--color-state-warning)] text-state-warning' : 'text-text-muted'}
+            />
+            <span className="sr-only">
+              {n} {n === 1 ? 'star' : 'stars'}
+            </span>
+          </label>
+        ))}
+      </div>
+    </fieldset>
+  )
+}
+
+/**
+ * The rating on an approved task: shown to everyone who can see the task;
+ * given or changed by the giver or an admin for 7 days (0012's rate_task).
+ */
+function RatingBlock({
+  task,
+  editable,
+  who,
+  onSaved,
+}: {
+  task: OfficeTask
+  editable: boolean
+  who: (id: string | null) => string
+  onSaved: (message: string) => void
+}) {
+  const rate = useRateTask()
+  const id = useId()
+  const [open, setOpen] = useState(false)
+  const [stars, setStars] = useState(task.rating ?? 0)
+  const [note, setNote] = useState(task.rating_note ?? '')
+  const [error, setError] = useState<string | null>(null)
+  const headingRef = useRef<HTMLHeadingElement>(null)
+  const rating = task.rating ?? null
+  const rated = rating !== null
+  if (!rated && !editable) return null
+
+  // Opening starts from the saved rating, never from an edit that was abandoned.
+  const openForm = () => {
+    setStars(task.rating ?? 0)
+    setNote(task.rating_note ?? '')
+    setError(null)
+    setOpen(true)
+  }
+
+  const save = async (e: FormEvent) => {
+    e.preventDefault()
+    if (!stars) return setError('Choose 1 to 5 stars.')
+    setError(null)
+    // Awaited rather than per-call callbacks: saving changes rated_at, which
+    // remounts this block (its key), and the message must still be said.
+    try {
+      await rate.mutateAsync({ id: task.id, stars, note: note.trim() })
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'The rating was not saved. Try again.')
+      return
+    }
+    setOpen(false)
+    onSaved(`Rated ${stars} of 5. ${who(task.assigned_to)} will see it.`)
+  }
+
+  return (
+    <section aria-labelledby={`${id}-rating`} className="rounded-[12px] bg-surface-sunken p-3 text-sm">
+      <h3 ref={headingRef} tabIndex={-1} id={`${id}-rating`} className="rounded-[6px] text-[11px] font-medium tracking-[0.08em] text-text-secondary uppercase">
+        Rating
+      </h3>
+      {rated && !open ? (
+        <div className="mt-1.5 space-y-1">
+          <Stars value={rating ?? 0} size={16} />
+          {task.rating_note ? <p className="whitespace-pre-wrap text-text-primary">{task.rating_note}</p> : null}
+          <p className="text-[12px] text-text-muted">From {who(task.rated_by ?? null)}</p>
+        </div>
+      ) : null}
+      {editable && !open ? (
+        <Button size="sm" variant="secondary" className={cn('mt-2', TOUCH)} onClick={openForm}>
+          {rated ? 'Change rating' : 'Rate this task'}
+        </Button>
+      ) : null}
+      {open ? (
+        <form onSubmit={(e) => void save(e)} aria-label="Rate this task" className="mt-2 space-y-3" noValidate>
+          <StarPicker
+            errorId={error ? `${id}-error` : undefined}
+            value={stars}
+            onChange={(n) => {
+              setStars(n)
+              setError(null)
+            }}
+            name={`${id}-stars`}
+          />
+          <div>
+            <Label htmlFor={`${id}-note`}>Comment (optional)</Label>
+            <Input id={`${id}-note`} value={note} maxLength={500} onChange={(e) => setNote(e.target.value)} className={TOUCH} />
+          </div>
+          <div id={`${id}-error`}>
+            <FieldError>{error}</FieldError>
+          </div>
+          <div className="flex justify-end gap-2">
+            <Button
+              type="button"
+              variant="ghost"
+              className={TOUCH}
+              onClick={() => {
+                setOpen(false)
+                setError(null)
+                // The form is gone; its heading keeps the keyboard's place.
+                requestAnimationFrame(() => headingRef.current?.focus())
+              }}
+            >
+              Back
+            </Button>
+            <Button type="submit" loading={rate.isPending} className={TOUCH}>
+              Save rating
+            </Button>
+          </div>
+        </form>
+      ) : null}
+    </section>
+  )
+}
+
 /* ---------------------------------------------------------------- the list */
 
 function TaskRow({
@@ -133,6 +319,7 @@ function TaskRow({
             </span>
           ) : null}
           <DueChip task={task} today={today} />
+          {typeof task.rating === 'number' ? <Stars value={task.rating} size={12} /> : null}
           {mine ? (
             <span className="font-semibold text-text-primary">{task.status === 'done' ? 'Needs your check' : 'New for you'}</span>
           ) : null}
@@ -276,9 +463,152 @@ function NewTask({ open, onOpenChange, today }: { open: boolean; onOpenChange: (
   )
 }
 
+/* ----------------------------------------------------------- proof images (0013) */
+
+/** The images handed in with a task: thumbnails, each opening full size in a new tab. */
+function ProofImages({ images }: { images: TaskImage[] }) {
+  return (
+    <ul className="mt-2 flex flex-wrap gap-2" aria-label="Images handed in">
+      {images.map((img) => (
+        <li key={img.id}>
+          {img.url ? (
+            <a
+              href={img.url}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="block overflow-hidden rounded-[8px] hairline transition-opacity duration-150 hover:opacity-90"
+              title={`${img.file_name} (opens full size)`}
+            >
+              <img src={img.url} alt={img.file_name} loading="lazy" className="size-24 object-cover" />
+            </a>
+          ) : (
+            <span className="flex size-24 items-center justify-center rounded-[8px] hairline px-2 text-center text-[11px] text-text-muted">
+              {img.file_name} could not be loaded
+            </span>
+          )}
+        </li>
+      ))}
+    </ul>
+  )
+}
+
+/** One chosen image's preview: its object URL is made and let go of with it. */
+function Preview({ file }: { file: File }) {
+  const [url, setUrl] = useState<string | null>(null)
+  useEffect(() => {
+    const u = URL.createObjectURL(file)
+    setUrl(u)
+    return () => URL.revokeObjectURL(u)
+  }, [file])
+  return url ? (
+    <img src={url} alt={file.name} className="size-16 rounded-[8px] object-cover hairline" />
+  ) : (
+    <span className="block size-16 rounded-[8px] hairline" />
+  )
+}
+
+/**
+ * Choosing images to hand in: checked here against the bucket's limits so a
+ * too-big or wrong file is said at once, not after an upload fails.
+ */
+function ProofPicker({ files, onChange }: { files: File[]; onChange: (files: File[]) => void }) {
+  const id = useId()
+  const inputRef = useRef<HTMLInputElement>(null)
+  const listRef = useRef<HTMLDivElement>(null)
+  const [problem, setProblem] = useState<string | null>(null)
+  const [said, setSaid] = useState('')
+  // The same image picked twice: same name and same size.
+  const same = (a: File, b: File) => a.name === b.name && a.size === b.size
+
+  const add = (picked: FileList | null) => {
+    if (!picked?.length) return
+    const next = [...files]
+    const issues: string[] = []
+    let added = 0
+    for (const f of Array.from(picked)) {
+      if (!proofType(f)) issues.push(`${f.name} is not an image (PNG, JPEG, WebP or GIF).`)
+      else if (f.size > PROOF_MAX_BYTES) issues.push(`${f.name} is over 10 MB.`)
+      else if (next.some((x) => same(x, f))) issues.push(`${f.name} is already added.`)
+      else if (next.length >= PROOF_MAX_FILES) issues.push(`Up to ${PROOF_MAX_FILES} images: ${f.name} was left out.`)
+      else {
+        next.push(f)
+        added++
+      }
+    }
+    setProblem(issues.length ? issues.join(' ') : null)
+    setSaid(added ? `${added} ${added === 1 ? 'image' : 'images'} added, ${next.length} in all.` : '')
+    onChange(next)
+    if (inputRef.current) inputRef.current.value = ''
+  }
+
+  const remove = (k: number) => {
+    setProblem(null)
+    setSaid(`${files[k].name} removed.`)
+    onChange(files.filter((_, j) => j !== k))
+    // The button it was on has gone: keep the keyboard in the picker.
+    requestAnimationFrame(() => {
+      const buttons = listRef.current?.querySelectorAll<HTMLButtonElement>('button[data-remove]')
+      ;(buttons?.[Math.min(k, (buttons?.length ?? 1) - 1)] ?? inputRef.current)?.focus()
+    })
+  }
+
+  return (
+    <div>
+      <p id={`${id}-label`} className="mb-1.5 block text-[11px] font-medium tracking-[0.08em] text-text-secondary uppercase">
+        Images (optional)
+      </p>
+      <div ref={listRef} className="flex flex-wrap items-center gap-2">
+        {files.map((f, k) => (
+          <span key={`${f.name}-${f.size}-${f.lastModified}`} className="relative">
+            <Preview file={f} />
+            <button
+              type="button"
+              data-remove=""
+              onClick={() => remove(k)}
+              aria-label={`Remove image ${k + 1}, ${f.name}`}
+              className="press absolute -top-2 -right-2 flex size-7 items-center justify-center rounded-full bg-surface-raised text-text-primary shadow-[var(--shadow-sm)] hairline max-sm:size-10"
+            >
+              <X size={13} strokeWidth={2} aria-hidden />
+            </button>
+          </span>
+        ))}
+        {files.length < PROOF_MAX_FILES ? (
+          <label className="press flex h-16 cursor-pointer items-center gap-2 rounded-[8px] border border-dashed border-line px-3 text-[13px] text-text-secondary transition-colors duration-150 hover:bg-[var(--hover)] has-[input:focus-visible]:ring-2 has-[input:focus-visible]:ring-brand">
+            <ImagePlus size={16} strokeWidth={1.75} aria-hidden />
+            <span id={`${id}-add`}>Add images</span>
+            <input
+              ref={inputRef}
+              id={`${id}-files`}
+              type="file"
+              accept={[...PROOF_TYPES_ACCEPT].join(',')}
+              multiple
+              onChange={(e) => add(e.target.files)}
+              aria-labelledby={`${id}-label ${id}-add`}
+              aria-describedby={`${id}-files-hint${problem ? ` ${id}-files-error` : ''}`}
+              className="sr-only"
+            />
+          </label>
+        ) : null}
+      </div>
+      <p id={`${id}-files-hint`} className="mt-1 text-[12px] text-text-muted">
+        Up to {PROOF_MAX_FILES} images, 10 MB each. Only the people on this task, and the admins, can see them.
+      </p>
+      <p role="status" className="sr-only">
+        {said}
+      </p>
+      <div id={`${id}-files-error`}>
+        <FieldError>{problem}</FieldError>
+      </div>
+    </div>
+  )
+}
+
+/** What the file chooser offers: the accepted types, and their extensions for browsers that need them. */
+const PROOF_TYPES_ACCEPT = ['image/png', 'image/jpeg', 'image/webp', 'image/gif', '.png', '.jpg', '.jpeg', '.webp', '.gif']
+
 /* ------------------------------------------------------------ one task open */
 
-type Draft = { kind: 'done' | 'return' | 'cancel'; note: string; link: string } | null
+type Draft = { kind: 'done' | 'return' | 'cancel'; note: string; link: string; files: File[] } | null
 
 function TaskDetail({
   task,
@@ -296,6 +626,9 @@ function TaskDetail({
   const userId = useAuthStore((s) => s.profile?.id) ?? ''
   const admin = useIsTaskAdmin()
   const { data: events, isLoading: eventsLoading } = useTaskEvents(task.id)
+  // Proof images (0013): shown to everyone who can see the task; the picker only once 0013 is in.
+  const { data: filesData } = useTaskFiles(task.id)
+  const images = filesData?.rows ?? []
   const start = useStartTask()
   const complete = useCompleteTask()
   const review = useReviewTask()
@@ -313,6 +646,8 @@ function TaskDetail({
   const id = useId()
 
   const assignee = task.assigned_to === userId
+  // When the dialog opened: canRate's 7-day window is judged against it, so a render stays pure.
+  const [openedAt] = useState(() => Date.now())
   const busy = start.isPending || complete.isPending || review.isPending || cancel.isPending
   const who = (pid: string | null) => (!pid ? 'Someone' : pid === userId ? 'You' : nameOf(pid))
   const fail = (err: Error) => {
@@ -321,7 +656,7 @@ function TaskDetail({
   }
   const openDraft = (kind: NonNullable<Draft>['kind']) => {
     setError(null)
-    setDraft({ kind, note: '', link: '' })
+    setDraft({ kind, note: '', link: '', files: [] })
   }
   const done = (message: string) => {
     setDraft(null)
@@ -368,7 +703,7 @@ function TaskDetail({
     if (!draft) return
     if (draft.kind === 'done') {
       complete.mutate(
-        { id: task.id, note: draft.note.trim(), link: draft.link.trim() },
+        { id: task.id, note: draft.note.trim(), link: draft.link.trim(), files: draft.files },
         { onSuccess: () => done(`Done. ${who(task.assigned_by)} will check it.`), onError: fail },
       )
     } else if (draft.kind === 'return') {
@@ -382,7 +717,9 @@ function TaskDetail({
   return (
     <Modal
       open
-      onOpenChange={(o) => !o && onClose()}
+      // Not while images are uploading: closing would lose the result, and the
+      // task could be handed in twice.
+      onOpenChange={(o) => !o && !complete.isPending && onClose()}
       onCloseAutoFocus={onCloseAutoFocus}
       title={task.title}
       description={`${who(task.assigned_by)} gave this to ${who(task.assigned_to).replace(/^You$/, 'you')}`}
@@ -398,7 +735,7 @@ function TaskDetail({
 
         {task.details ? <p className="text-sm whitespace-pre-wrap text-text-primary">{task.details}</p> : null}
 
-        {(task.status === 'done' || task.status === 'approved') && (task.done_note || task.done_link) ? (
+        {(task.status === 'done' || task.status === 'approved') && (task.done_note || task.done_link || images.length > 0) ? (
           <div className="rounded-[12px] bg-surface-sunken p-3 text-sm">
             <p className="text-[11px] font-medium tracking-[0.08em] text-text-secondary uppercase">Handed in</p>
             {task.done_note ? <p className="mt-1 whitespace-pre-wrap text-text-primary">{task.done_note}</p> : null}
@@ -414,7 +751,12 @@ function TaskDetail({
                 {task.done_link}
               </a>
             ) : null}
+            {images.length ? <ProofImages images={images} /> : null}
           </div>
+        ) : null}
+
+        {task.status === 'approved' ? (
+          <RatingBlock key={task.rated_at ?? 'unrated'} task={task} editable={canRate(task, userId, admin, openedAt)} who={who} onSaved={done} />
         ) : null}
 
         <section aria-labelledby={`${id}-history`}>
@@ -473,6 +815,10 @@ function TaskDetail({
                     className={TOUCH}
                   />
                 </div>
+                {/* Hidden only when 0013 is not applied; a failed read still offers it. */}
+                {filesData?.available !== false ? (
+                  <ProofPicker files={draft.files} onChange={(files) => setDraft({ ...draft, files })} />
+                ) : null}
               </>
             ) : (
               <div>
@@ -493,6 +839,7 @@ function TaskDetail({
                 type="button"
                 variant="ghost"
                 className={TOUCH}
+                disabled={busy}
                 onClick={() => {
                   setDraft(null)
                   setError(null)

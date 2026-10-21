@@ -213,7 +213,7 @@ export interface OfficeRosterDay {
 /* ------------------------------------------------------------ tasks (0011) */
 
 export type TaskStatus = 'open' | 'in_progress' | 'done' | 'approved' | 'cancelled'
-export type TaskEventKind = 'assigned' | 'started' | 'done' | 'approved' | 'returned' | 'cancelled'
+export type TaskEventKind = 'assigned' | 'started' | 'done' | 'approved' | 'returned' | 'cancelled' | 'rated'
 
 /** office_tasks: one task one person gave another. Changed only through the 0011 functions. */
 export interface OfficeTask {
@@ -232,6 +232,39 @@ export interface OfficeTask {
   closed_by: string | null
   created_at: string
   updated_at: string
+  /** 0012: 1 to 5 stars on an approved task, and the comment with them. Absent before it. */
+  rating?: number | null
+  rating_note?: string | null
+  rated_by?: string | null
+  rated_at?: string | null
+}
+
+/** office_task_files (0013): an image handed in as proof of a task. */
+export interface OfficeTaskFile {
+  id: string
+  task_id: string
+  uploaded_by: string | null
+  /** Path inside the private task-proof bucket: <task id>/<uploader>/<file>. */
+  storage_path: string
+  file_name: string
+  mime_type: string
+  size_bytes: number
+  created_at: string
+}
+
+/** office_leaderboard() (0012, tasks and reports only): one person's week. */
+export interface LeaderboardRow {
+  user_id: string
+  full_name: string
+  tasks_done: number
+  task_points: number
+  ratings: number
+  /** Average stars on the week's approved tasks, or null if none was rated. */
+  avg_rating: number | null
+  reports_on_time: number
+  points: number
+  starts_at: string
+  ends_at: string
 }
 
 /** office_task_events: a task's history, one row per step. */

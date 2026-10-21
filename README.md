@@ -33,7 +33,7 @@ All of this is done by hand; nothing here holds database credentials.
    - Realtime > Settings: leave "Allow public access" ON (the office channel is private and
      guarded by its own RLS).
 2. **Migrations**, in the SQL editor, each file as one run, in order:
-   `0001_team`, `0002_office_reports`, then `0004` to `0011`. **Leave `0003` for step 6.**
+   `0001_team`, `0002_office_reports`, then `0004` to `0013`. **Leave `0003` for step 6.**
    Each runs in a transaction and checks itself; a failure changes nothing.
 3. **Mr Tito** (0001's and 0002's headers):
    ```sql
@@ -79,6 +79,21 @@ back in progress. The giver (or an admin) can cancel a task that is not yet appr
 - **Limits:** 30 new tasks an hour per person; approved and cancelled tasks leave the lists after 60
   days (the rows stay).
 - Migration `0011_office_tasks` switches it on; until it is applied the Tasks tab stays hidden.
+- **Proof images (0013):** marking a task done can include up to 5 images (PNG, JPEG, WebP or GIF,
+  10 MB each), shown as thumbnails to the people on the task and the admins. Stored in the private
+  `task-proof` bucket; an image uploaded but never handed in is removed by the alerts route after a day.
+
+## Ratings and the weekly leaderboard (0012)
+
+The person who gave a task (or an admin) rates it 1 to 5 stars once it is approved; changeable for 7
+days, final once its week has closed. The assignee is told in the office and by email.
+
+**Leaderboard** (everyone sees the whole table; Mr Tito runs it and is not on it): the week runs
+Friday 17:00 to Friday 17:00, office time. Points: each task approved 5 plus its stars (3 if not
+rated), at most 80 a week, whoever gave it; 1 for each report filed on time. Time in the office and
+sign-in times are not scored. **Friday from 17:00**, on the alerts clock (0003): everyone gets their
+week by email, the top of the table a special one, Mr Tito and the admins the whole table. It is for
+recognition: no pay or disciplinary step follows from it (the staff notice, v3, says so).
 
 ## Trial mode
 
@@ -104,7 +119,7 @@ The 10 minutes to "away" is in the screens (`src/lib/presence.ts`), not the data
 
 ## Rolling back
 
-`supabase/rollbacks/`, one per migration, **newest first** (0011 down to 0002). Each is one
+`supabase/rollbacks/`, one per migration, **newest first** (0013 down to 0002). Each is one
 transaction. 0002's and 0007's leave their storage buckets (`proof`, `avatars`): empty and delete
 them in Storage afterwards (Supabase refuses SQL deletes on storage tables).
 

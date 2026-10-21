@@ -243,6 +243,153 @@ ${i.rows
   }
 }
 
+/* ------------------------------------------------- the leaderboard (0012) */
+
+/** ★★★★☆ for 4: the stars are the message, the number beside them says it in words. */
+const starLine = (n: number) => '★'.repeat(n) + '☆'.repeat(5 - n)
+
+export interface BoardRow {
+  name: string
+  points: number
+  tasks: number
+  /** Average stars on this week's approved tasks, or null if none was rated. */
+  avgRating: number | null
+  reports: number
+}
+
+export interface RatingLine {
+  title: string
+  stars: number
+  note: string | null
+  by: string
+}
+
+const BOARD_HEAD = ['', '', 'Points', 'Tasks approved', 'Reports on time']
+
+const boardCell = (s: string, strong = false) =>
+  `<td style="padding:6px 10px 6px 0;border-top:1px solid ${RULE};font-size:14px;${strong ? 'font-weight:600;' : ''}">${esc(s)}</td>`
+
+const tasksCell = (r: BoardRow) => (r.avgRating === null ? String(r.tasks) : `${r.tasks} (${r.avgRating.toFixed(1)}★)`)
+
+/** The whole table, or its first rows; `me` is set in bold gold. */
+function boardTable(rows: BoardRow[], me?: string): string {
+  return `    <table role="presentation" cellpadding="0" cellspacing="0" border="0" style="margin:0 0 18px;border-collapse:collapse;">
+      <tr>${BOARD_HEAD.map((h) => `<td style="padding:0 10px 6px 0;font-size:12px;color:${MUTED};text-transform:uppercase;letter-spacing:0.06em;">${h}</td>`).join('')}</tr>
+${rows
+  .map((r, k) => {
+    const mine = me !== undefined && r.name === me
+    return `      <tr${mine ? ` style="background:#FBF6E7;"` : ''}>${boardCell(`${k + 1}.`)}${boardCell(r.name, true)}${boardCell(String(r.points), true)}${boardCell(tasksCell(r))}${boardCell(String(r.reports))}</tr>`
+  })
+  .join('\n')}
+    </table>\n`
+}
+
+const boardText = (rows: BoardRow[]) =>
+  rows.map((r, k) => `${k + 1}. ${r.name}: ${r.points} points (tasks approved ${tasksCell(r)}, reports on time ${r.reports})`)
+
+const POINTS_NOTE =
+  'Points: 5 plus its stars for each task approved (3 if not rated), up to 80 a week, whoever gave the task; 1 for each report filed on time.'
+
+/**
+ * Friday, to each person on the board: their place, their numbers, the stars
+ * they were given, and the top three. The winner gets the same with a
+ * different opening (and subject): `winner`.
+ */
+export function leaderboardPersonal(i: {
+  name: string
+  rank: number
+  of: number
+  row: BoardRow
+  top: BoardRow[]
+  ratings: RatingLine[]
+  week: string
+  boardUrl: string
+  winner: boolean
+}): Email {
+  const row = { ...i.row, name: cleanName(i.row.name) }
+  const top = i.top.map((r) => ({ ...r, name: cleanName(r.name) }))
+  const ratings = i.ratings.map((r) => ({ ...r, title: cleanName(r.title, 120), note: r.note ? cleanName(r.note, 300) : null, by: cleanName(r.by) }))
+  const first = firstNameOf(i.name)
+  const opening = i.winner
+    ? `You finished first on the JustUsedTech leaderboard this week, with ${row.points} points. Congratulations, and thank you.`
+    : row.points > 0
+      ? `You finished ${i.rank} of ${i.of} this week, with ${row.points} points.`
+      : 'A quiet week on the leaderboard. Next week starts now.'
+  const mine = [`Tasks approved: ${tasksCell(row)}`, `Reports on time: ${row.reports}`]
+  const ratingsHtml = ratings.length
+    ? p('<strong>Stars you were given</strong>') +
+      ratings
+        .map((r) => p(`${esc(starLine(r.stars))} <strong>${esc(r.title)}</strong>, from ${esc(r.by)}${r.note ? `<br><span style="color:${MUTED};">${esc(r.note)}</span>` : ''}`))
+        .join('')
+    : ''
+  const banner = i.winner
+    ? `    <p style="margin:0 0 18px;padding:14px 16px;background:${INK};color:#FFD966;border-radius:8px;font-size:18px;font-weight:600;">Top of the team this week</p>\n`
+    : ''
+  return {
+    subject: i.winner ? 'You topped the JustUsedTech leaderboard this week' : `Your week: ${row.points} points, ${i.rank} of ${i.of}`,
+    html: shell(
+      banner +
+        p(`Hi ${esc(first)},`) +
+        p(esc(opening)) +
+        p(`<span style="color:${MUTED};">${esc(i.week)}</span>`) +
+        p(mine.map(esc).join('<br>')) +
+        ratingsHtml +
+        p('<strong>Top of the table</strong>') +
+        boardTable(top, row.name) +
+        p(`<span style="color:${MUTED};font-size:13px;">${esc(POINTS_NOTE)}</span>`) +
+        link(i.boardUrl, 'See the whole leaderboard'),
+    ),
+    text: [
+      ...(i.winner ? ['TOP OF THE TEAM THIS WEEK', ''] : []),
+      `Hi ${first},`,
+      '',
+      opening,
+      i.week,
+      '',
+      ...mine,
+      ...(ratings.length ? ['', 'Stars you were given:', ...ratings.map((r) => `${starLine(r.stars)} ${r.title}, from ${r.by}${r.note ? `: ${r.note}` : ''}`)] : []),
+      '',
+      'Top of the table:',
+      ...boardText(top),
+      '',
+      POINTS_NOTE,
+      '',
+      `See the whole leaderboard: ${i.boardUrl}`,
+    ].join('\n'),
+  }
+}
+
+/** Friday, to Mr Tito and the admins: the whole table. */
+export function leaderboardTable(i: { name: string; rows: BoardRow[]; week: string; boardUrl: string }): Email {
+  const rows = i.rows.map((r) => ({ ...r, name: cleanName(r.name) }))
+  const winner = rows[0] && rows[0].points > 0 ? rows[0] : null
+  const head = winner ? `${winner.name} topped the leaderboard this week with ${winner.points} points.` : 'Nobody scored this week.'
+  return {
+    // A fixed subject: names are self-edited, and this goes out from the office's address.
+    subject: "This week's JustUsedTech leaderboard",
+    html: shell(
+      p(`Hi ${esc(firstNameOf(i.name))},`) +
+        p(esc(head)) +
+        p(`<span style="color:${MUTED};">${esc(i.week)}</span>`) +
+        (rows.length ? boardTable(rows) : '') +
+        p(`<span style="color:${MUTED};font-size:13px;">${esc(POINTS_NOTE)} Everyone on the team sees this table.</span>`) +
+        link(i.boardUrl, 'Open the leaderboard'),
+    ),
+    text: [
+      `Hi ${firstNameOf(i.name)},`,
+      '',
+      head,
+      i.week,
+      '',
+      ...boardText(rows),
+      '',
+      `${POINTS_NOTE} Everyone on the team sees this table.`,
+      '',
+      `Open the leaderboard: ${i.boardUrl}`,
+    ].join('\n'),
+  }
+}
+
 /** Someone knocked while you were not on the site. */
 export function officeKnock(i: { recipientName: string; fromName: string; officeUrl: string }): Email {
   i = { ...i, fromName: cleanName(i.fromName) || 'Someone' }
@@ -263,7 +410,7 @@ export function officeKnock(i: { recipientName: string; fromName: string; office
   }
 }
 
-export type TaskEmailKind = 'assigned' | 'done' | 'returned'
+export type TaskEmailKind = 'assigned' | 'done' | 'returned' | 'rated'
 
 /**
  * A task step (0011), to the other person: a new task to the assignee, "done,
@@ -278,6 +425,10 @@ export function officeTask(i: {
   /** 'YYYY-MM-DD' or null. */
   dueOn: string | null
   note: string | null
+  /** 'rated' (0012): the stars given, 1 to 5. */
+  stars?: number | null
+  /** 'done' (0013): how many images were handed in with it. */
+  images?: number
   tasksUrl: string
 }): Email {
   const actor = cleanName(i.actorName) || 'Someone'
@@ -286,16 +437,20 @@ export function officeTask(i: {
   const due = i.dueOn
     ? new Date(`${i.dueOn}T12:00:00Z`).toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short', timeZone: 'UTC' })
     : ''
+  const n = Math.min(5, Math.max(1, Math.round(i.stars ?? 0)))
   const lead =
     i.kind === 'assigned' ? `${actor} gave you a task${due ? `, due ${due}` : ''}:`
     : i.kind === 'done' ? `${actor} has finished a task you gave them. It is waiting for your check:`
+    : i.kind === 'rated' ? `${actor} rated your task ${starLine(n)} (${n} of 5):`
     : `${actor} sent a task back to you:`
-  const noteLabel = i.kind === 'returned' ? 'What still needs doing' : 'Their note'
+  const noteLabel = i.kind === 'returned' ? 'What still needs doing' : i.kind === 'rated' ? 'Their comment' : 'Their note'
   const subject =
     i.kind === 'assigned' ? `New task from ${actor}: ${title}`
     : i.kind === 'done' ? `Done, please check: ${title}`
+    : i.kind === 'rated' ? `${n} of 5 stars: ${title}`
     : `Sent back: ${title}`
   const linkLabel = i.kind === 'done' ? 'Open Tasks to check it' : 'Open Tasks'
+  const imagesLine = i.kind === 'done' && i.images ? `${i.images} ${i.images === 1 ? 'image' : 'images'} attached.` : ''
   return {
     subject: cleanName(subject, 150),
     html: shell(
@@ -303,6 +458,7 @@ export function officeTask(i: {
         p(esc(lead)) +
         p(`<strong>${esc(title)}</strong>`) +
         (note ? p(`<span style="color:${MUTED};">${esc(noteLabel)}:</span> ${esc(note)}`) : '') +
+        (imagesLine ? p(esc(imagesLine)) : '') +
         link(i.tasksUrl, linkLabel),
     ),
     text: [
@@ -311,6 +467,7 @@ export function officeTask(i: {
       lead,
       title,
       ...(note ? ['', `${noteLabel}: ${note}`] : []),
+      ...(imagesLine ? ['', imagesLine] : []),
       '',
       `${linkLabel}: ${i.tasksUrl}`,
     ].join('\n'),

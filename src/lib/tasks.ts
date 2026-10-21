@@ -17,6 +17,7 @@ export const EVENT_LABEL: Record<TaskEventKind, string> = {
   approved: 'approved it',
   returned: 'sent it back',
   cancelled: 'cancelled it',
+  rated: 'rated it',
 }
 
 export const isClosed = (t: OfficeTask) => t.status === 'approved' || t.status === 'cancelled'
@@ -39,6 +40,21 @@ export const canReview = (t: OfficeTask, userId: string, admin: boolean) =>
 /** Who may cancel an open task: the giver or an admin, never the assignee. */
 export const canCancel = (t: OfficeTask, userId: string, admin: boolean) =>
   !isClosed(t) && t.assigned_to !== userId && (t.assigned_by === userId || admin)
+
+/** Ratings close this long after a task is approved (0012's rate_task). */
+const RATING_DAYS = 7
+
+/**
+ * Who may rate (0012): an approved task, by the giver or an admin, never the
+ * assignee, for 7 days after it was approved. `now` is passed in so a render
+ * stays pure.
+ */
+export const canRate = (t: OfficeTask, userId: string, admin: boolean, now: number) =>
+  t.status === 'approved' &&
+  t.assigned_to !== userId &&
+  (t.assigned_by === userId || admin) &&
+  !!t.closed_at &&
+  Date.parse(t.closed_at) > now - RATING_DAYS * 86_400_000
 
 /** "Mon 3 Nov", for a 'YYYY-MM-DD' calendar date. */
 export function dueLabel(date: string): string {

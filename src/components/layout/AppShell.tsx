@@ -1,5 +1,5 @@
 import { NavLink, Outlet } from 'react-router-dom'
-import { Building2, ClipboardCheck, ListChecks, LogOut, Moon, Settings, Sun } from 'lucide-react'
+import { Building2, ClipboardCheck, ListChecks, LogOut, Moon, Settings, Sun, Trophy } from 'lucide-react'
 import { useAuthStore } from '@/stores/authStore'
 import { useToastStore } from '@/stores/toastStore'
 import { useThemeStore } from '@/stores/themeStore'
@@ -16,6 +16,7 @@ import { StatusMenu } from '@/components/office/StatusMenu'
 import { Photo } from '@/components/ui/Photo'
 import { usePhotoRefresh } from '@/hooks/usePhotos'
 import { useTasks } from '@/hooks/useTasks'
+import { useLeaderboardAvailable } from '@/hooks/useLeaderboard'
 import { needsMe } from '@/lib/tasks'
 
 /**
@@ -29,6 +30,8 @@ const NAV = [
   { to: '/reports', label: 'Reports', icon: ClipboardCheck, managerOnly: false },
   // Shown once 0011 is applied.
   { to: '/tasks', label: 'Tasks', icon: ListChecks, managerOnly: false },
+  // Shown once 0012 is applied.
+  { to: '/leaderboard', label: 'Leaderboard', icon: Trophy, managerOnly: false },
   { to: '/settings', label: 'Settings', icon: Settings, managerOnly: true },
 ]
 
@@ -52,8 +55,11 @@ export function AppShell() {
   const hideToast = useToastStore((s) => s.hideToast)
   usePhotoRefresh()
   const { data: tasks } = useTasks()
+  const { data: boardOn } = useLeaderboardAvailable()
 
-  const items = NAV.filter((n) => (!n.managerOnly || isManager) && (n.to !== '/tasks' || tasks?.available))
+  const items = NAV.filter(
+    (n) => (!n.managerOnly || isManager) && (n.to !== '/tasks' || tasks?.available) && (n.to !== '/leaderboard' || boardOn),
+  )
   // Tasks waiting on you: given to you and not started, or done and waiting for your check.
   const waiting = profile && tasks?.available ? tasks.rows.filter((t) => needsMe(t, profile.id)).length : 0
   const badge = (to: string) => (to === '/tasks' && waiting ? waiting : 0)

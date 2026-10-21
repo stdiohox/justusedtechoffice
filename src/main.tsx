@@ -15,6 +15,7 @@ import { EmptyState, Skeleton } from '@/components/ui/primitives'
 const Office = lazy(() => import('@/pages/Office').then((m) => ({ default: m.Office })))
 const Reports = lazy(() => import('@/pages/Reports').then((m) => ({ default: m.Reports })))
 const Tasks = lazy(() => import('@/pages/Tasks').then((m) => ({ default: m.Tasks })))
+const Leaderboard = lazy(() => import('@/pages/Leaderboard').then((m) => ({ default: m.Leaderboard })))
 const Settings = lazy(() => import('@/pages/Settings').then((m) => ({ default: m.Settings })))
 
 
@@ -77,6 +78,14 @@ function App() {
           element={
             <Suspense fallback={<RouteFallback />}>
               <Reports />
+            </Suspense>
+          }
+        />
+        <Route
+          path="/leaderboard"
+          element={
+            <Suspense fallback={<RouteFallback />}>
+              <Leaderboard />
             </Suspense>
           }
         />
