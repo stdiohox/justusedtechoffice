@@ -2,8 +2,9 @@
 --
 -- APPLY AFTER 0013, then deploy straight after (the screens read the new
 -- times from office_settings; the early-start box appears once this is in).
--- Not on a Friday between 17:00 and 19:00 before the deploy: the week's close
--- moves from 17:00 to 19:00 (section 3).
+-- Not on a Friday before 20:30 unless the deploy follows at once: the week's
+-- close moves from 17:00 to 20:30 (section 3), and the old Friday email would
+-- otherwise go out for the wrong week.
 --
 -- 1. THE DAY (asked 2026-10-21): sign-in at 11:00 (on time until 11:15),
 --    midday report 15:00 to 16:00, end-of-day report from 19:00 (on time until
@@ -18,8 +19,9 @@
 --    of their first task step, knock or chat message that day. Nothing new is
 --    tracked; the staff notice (v4) says so.
 --
--- 3. THE LEADERBOARD WEEK closes on Friday when the end-of-day report opens
---    (office_settings.eod_opens, 19:00 here), not at a fixed 17:00.
+-- 3. THE LEADERBOARD WEEK closes on Friday when the end-of-day report is due
+--    (office_settings.eod_deadline, 20:30 here), not at a fixed 17:00, so
+--    Friday's end-of-day reports count in their own week.
 
 begin;
 
@@ -163,7 +165,7 @@ grant  execute on function public.declare_day_start(time, text) to authenticated
 grant  execute on function public.office_day_starts_range(date, date) to authenticated, service_role;
 
 -- ---------------------------------------------------------------------------
--- 3. The leaderboard week closes when the end-of-day report opens
+-- 3. The leaderboard week closes when the end-of-day report is due
 -- ---------------------------------------------------------------------------
 create or replace function public.office_week_window(p_weeks_ago int default 0)
 returns table (starts_at timestamptz, ends_at timestamptz, closed boolean)
@@ -178,7 +180,7 @@ declare
   v_local  timestamp;
   v_anchor timestamp;
 begin
-  select s.timezone, s.eod_opens into v_tz, v_close from public.office_settings s where s.id = 1;
+  select s.timezone, s.eod_deadline into v_tz, v_close from public.office_settings s where s.id = 1;
   if v_tz is null then
     raise exception 'The office has no settings row (0002).' using errcode = '55000';
   end if;
@@ -186,7 +188,7 @@ begin
     raise exception 'Weeks ago runs from 0 to 52.' using errcode = '22023';
   end if;
   v_local := now() at time zone v_tz;
-  -- The most recent Friday at the end-of-day time, at or before now (ISO 5 = Friday).
+  -- The most recent Friday at the end-of-day deadline, at or before now (ISO 5 = Friday).
   v_anchor := date_trunc('day', v_local)
               - make_interval(days => (extract(isodow from v_local)::int - 5 + 7) % 7)
               + v_close;

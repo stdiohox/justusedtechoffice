@@ -2,7 +2,7 @@
 
 The JustUsedTech team's virtual office: who is in, doors and knocks with a one-hour chat, three
 daily reports with proof, check-ins, time in the office, tasks the team gives each other, email
-reminders and Mr Tito's 18:30 summary. It is Tito Finance's virtual office (tito-crm `/office` and `/reports`, with the
+reminders and Mr Tito's end-of-day summary. It is Tito Finance's virtual office (tito-crm `/office` and `/reports`, with the
 improvements from its competitor research) lifted into its own app, with its own Supabase
 project. No data is shared with Tito Finance, and there is no CRM, so there is no work feed.
 
@@ -100,9 +100,9 @@ The person who gave a task (or an admin) rates it 1 to 5 stars once it is approv
 days, final once its week has closed. The assignee is told in the office and by email.
 
 **Leaderboard** (everyone sees the whole table; Mr Tito runs it and is not on it): the week runs
-Friday 17:00 to Friday 17:00, office time. Points: each task approved 5 plus its stars (3 if not
+Friday to Friday at the end-of-day deadline (20:30 since 0014), office time. Points: each task approved 5 plus its stars (3 if not
 rated), at most 80 a week, whoever gave it; 1 for each report filed on time. Time in the office and
-sign-in times are not scored. **Friday from 17:00**, on the alerts clock (0003): everyone gets their
+sign-in times are not scored. **Friday after 20:30**, on the alerts clock (0003): everyone gets their
 week by email, the top of the table a special one, Mr Tito and the admins the whole table. It is for
 recognition: no pay or disciplinary step follows from it (the staff notice, v3, says so).
 

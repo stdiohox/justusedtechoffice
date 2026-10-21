@@ -311,8 +311,9 @@ async function dayStarts(ctx: Ctx): Promise<Map<string, string>> {
   for (const r of (data ?? []) as { user_id: string; started_at: string | null; note: string | null; first_work_at: string | null }[]) {
     const said = r.started_at ? at(r.started_at) : null
     const first = r.first_work_at ? at(r.first_work_at) : null
+    // Beside a declared start the evidence always shows; with nothing said, only work before the start.
     const early = first && first < start ? first : null
-    if (said) out.set(r.user_id, `started ${said}, said by them${early ? ` (first work seen ${early})` : ''}`)
+    if (said) out.set(r.user_id, `started ${said}, said by them${first ? ` (first work seen ${first})` : ''}`)
     else if (early) out.set(r.user_id, `first work seen ${early}, before ${start}`)
   }
   return out
@@ -378,7 +379,7 @@ interface BoardDbRow {
 /** PostgREST / Postgres: "no function with those arguments" (0012 not applied). */
 const NO_FUNCTION = new Set(['42883', 'PGRST202'])
 
-/** "Fri 16 Oct, 17:00 to Fri 23 Oct, 17:00", office time. */
+/** "Fri 16 Oct, 20:30 to Fri 23 Oct, 20:30", office time. */
 function weekLabel(zone: string, from: string, to: string): string {
   const one = (iso: string) => {
     const d = new Date(iso)
@@ -389,9 +390,9 @@ function weekLabel(zone: string, from: string, to: string): string {
 }
 
 /**
- * The week that just closed (Friday 17:00 to Friday 17:00, 0012; scored on
+ * The week that just closed (Friday to Friday at the end-of-day deadline, 0014; scored on
  * tasks and reports), once, on
- * Friday from the end-of-day time (eod_opens): each person on the board gets their place,
+ * Friday after the end-of-day deadline (eod_deadline): each person on the board gets their place,
  * their numbers, the stars they were given and the top three (the winner, a
  * version that says so); Mr Tito and every admin get the whole table.
  * Read before claiming: without 0012 there is nothing to send, and nothing
@@ -400,8 +401,8 @@ function weekLabel(zone: string, from: string, to: string): string {
  */
 async function sendLeaderboard(ctx: Ctx): Promise<void> {
   const now = localParts(ctx.settings.timezone, new Date())
-  // The week closes when the end-of-day report opens (0014: 19:00 here).
-  if (now.weekday !== 5 || now.time < hhmm(ctx.settings.eod_opens)) return
+  // The week closes when the end-of-day report is due (0014: 20:30 here).
+  if (now.weekday !== 5 || now.time <= hhmm(ctx.settings.eod_deadline)) return
   const key = `leaderboard:${ctx.date}`
 
   const { data, error } = await ctx.db.rpc('office_leaderboard', { p_weeks_ago: 1 })

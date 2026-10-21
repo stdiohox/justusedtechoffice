@@ -29,6 +29,10 @@ export function EarlyStart({ settings, date }: { settings: OfficeSettings; date:
   const [note, setNote] = useState('')
   const [problem, setProblem] = useState<string | null>(null)
   const now = localParts(settings.timezone, new Date()).time
+  const boxRef = useRef<HTMLDivElement>(null)
+  // The control that was used has gone (form closed, start removed): put the
+  // keyboard on whichever button now stands in its place.
+  const refocus = () => requestAnimationFrame(() => boxRef.current?.querySelector<HTMLButtonElement>('button')?.focus())
 
   // Before 0014, or a day whose official start has not come yet: nothing to say.
   if (!data?.available || now < '04:00') return null
@@ -46,11 +50,20 @@ export function EarlyStart({ settings, date }: { settings: OfficeSettings; date:
     if (time >= start) return setProblem(`That is not before ${start}.`)
     if (time > now) return setProblem('That time has not come yet.')
     setProblem(null)
-    declare.mutate({ time, note }, { onSuccess: () => setOpen(false), onError: (err) => setProblem(err.message) })
+    declare.mutate(
+      { time, note },
+      {
+        onSuccess: () => {
+          setOpen(false)
+          refocus()
+        },
+        onError: (err) => setProblem(err.message),
+      },
+    )
   }
 
   return (
-    <div className="hairline-t mt-4 pt-3">
+    <div ref={boxRef} className="hairline-t mt-4 pt-3">
       {said && !open ? (
         <p className="flex flex-wrap items-center gap-x-2 gap-y-1 text-[13px] text-text-primary">
           <Sunrise size={15} strokeWidth={1.75} aria-hidden className="text-text-muted" />
@@ -64,11 +77,21 @@ export function EarlyStart({ settings, date }: { settings: OfficeSettings; date:
             size="sm"
             className={cn('text-state-danger', TOUCH)}
             loading={declare.isPending}
-            onClick={() => declare.mutate({ time: null, note: '' })}
+            onClick={() =>
+              declare.mutate(
+                { time: null, note: '' },
+                { onSuccess: refocus, onError: (err) => setProblem(err.message) },
+              )
+            }
           >
             Remove
           </Button>
         </p>
+      ) : null}
+      {!open && problem ? (
+        <div id={`${id}-error`}>
+          <FieldError>{problem}</FieldError>
+        </div>
       ) : null}
       {!said && !open ? (
         <Button variant="secondary" size="sm" className={TOUCH} icon={<Sunrise size={14} strokeWidth={1.75} />} onClick={openForm}>
@@ -93,6 +116,7 @@ export function EarlyStart({ settings, date }: { settings: OfficeSettings; date:
                 value={time}
                 onChange={(e) => setTime(e.target.value)}
                 className={cn('w-[140px]', TOUCH)}
+                aria-describedby={problem ? `${id}-error` : undefined}
               />
             </div>
             <div className="min-w-[200px] flex-1">
@@ -100,12 +124,23 @@ export function EarlyStart({ settings, date }: { settings: OfficeSettings; date:
               <Input id={`${id}-note`} maxLength={300} value={note} onChange={(e) => setNote(e.target.value)} className={TOUCH} />
             </div>
           </div>
-          <FieldError>{problem}</FieldError>
+          <div id={`${id}-error`}>
+            <FieldError>{problem}</FieldError>
+          </div>
           <div className="flex gap-2">
             <Button type="submit" size="sm" className={TOUCH} loading={declare.isPending}>
               Save
             </Button>
-            <Button type="button" variant="ghost" size="sm" className={TOUCH} onClick={() => setOpen(false)}>
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              className={TOUCH}
+              onClick={() => {
+                setOpen(false)
+                refocus()
+              }}
+            >
               Cancel
             </Button>
           </div>
@@ -125,7 +160,9 @@ export function StartLine({ start, zone, officialStart }: { start: DayStart | un
   const at = (iso: string) => localParts(zone, new Date(iso)).time
   const said = start.started_at ? at(start.started_at) : null
   const first = start.first_work_at ? at(start.first_work_at) : null
-  const early = first && first < officialStart ? first : null
+  // Beside a declared start the evidence always shows, whatever its time;
+  // with nothing declared, only work seen before the official start is news.
+  const early = said ? first : first && first < officialStart ? first : null
   if (!said && !early) return null
   return (
     <p className="tnum mt-0.5 flex items-center gap-1.5 text-[12px] text-text-secondary">

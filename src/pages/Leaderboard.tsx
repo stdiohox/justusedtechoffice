@@ -15,7 +15,7 @@ import type { LeaderboardRow } from '@/types/database'
  * them, and reports filed on time. Time in the office is not scored: it
  * rewards a tab left open, not work done. Everyone on the team sees the
  * whole table; the office manager runs
- * it and is not on it. The week closes on Friday when the end-of-day report opens, when
+ * it and is not on it. The week closes on Friday when the end-of-day report is due, when
  * everyone is emailed their week and the winner a special one.
  */
 
@@ -31,7 +31,7 @@ const POINTS: [string, string][] = [
   ['Report filed on time', '1 each'],
 ]
 
-/** "Fri 16 Oct, 17:00", office time. */
+/** "Fri 16 Oct, 20:30", office time. */
 function when(iso: string, zone: string): string {
   const d = new Date(iso)
   return `${d.toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short', timeZone: zone })}, ${localParts(zone, d).time}`
@@ -125,8 +125,8 @@ export function Leaderboard() {
   const { data, isLoading, isError, error } = useLeaderboard(week)
   const { data: settings } = useOfficeSettings()
   const zone = settings?.timezone ?? 'Africa/Lagos'
-  // The week closes when the end-of-day report opens (0014).
-  const weekClose = settings ? settings.eod_opens.slice(0, 5) : '17:00'
+  // The week closes when the end-of-day report is due (0014).
+  const weekClose = settings ? settings.eod_deadline.slice(0, 5) : ''
   const i = WEEKS.findIndex((w) => w.id === week)
 
   const rows = data?.rows ?? []
@@ -147,7 +147,7 @@ export function Leaderboard() {
       <div className="hairline-b sticky top-[var(--app-sticky-top)] z-10 flex flex-wrap items-end gap-3 bg-surface/95 px-4 pt-4 pb-3 backdrop-blur-sm sm:px-6">
         <div className="mr-auto">
           <h1 className="font-display text-[28px] leading-none font-medium text-text-primary">Leaderboard</h1>
-          <p className="mt-1.5 text-[13px] text-text-muted">{range || `The week closes on Friday at ${weekClose}.`}</p>
+          <p className="mt-1.5 text-[13px] text-text-muted">{range || (weekClose ? `The week closes on Friday at ${weekClose}.` : '')}</p>
         </div>
         <div
           role="tablist"
