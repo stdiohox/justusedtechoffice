@@ -2,7 +2,7 @@
 -- DESTRUCTIVE: every task and its history is deleted. Export office_tasks and
 -- office_task_events first if they should be kept. Hazel's role stays
 -- 'manager' (a label only without this migration); set it back by hand if wanted:
---   update public.profiles set role = 'member' where email = '<her email>';
+--   update public.profiles set role = 'member' where email = 'operations@justusedtech.org';
 begin;
 
 drop table if exists public.office_task_events;  -- also drops its policy

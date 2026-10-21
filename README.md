@@ -70,7 +70,7 @@ back in progress. The giver (or an admin) can cancel a task that is not yet appr
 - **Who sees what:** a task is seen by the person who gave it and the person it was given to. The
   office admins see every task (an **Everyone** tab) and can check or cancel any of them. Admins are
   the office manager and anyone whose `profiles.role` is `manager`. To make Hazel one, in the SQL editor:
-  `update public.profiles set role = 'manager' where email = '<her email>';`. That gives her the
+  `update public.profiles set role = 'manager' where email = 'operations@justusedtech.org';`. That gives her the
   tasks only; reports, time figures and Settings stay Mr Tito's.
 - **Telling people:** a badge on Tasks counts what waits on you (new tasks, and tasks you gave that
   are done). Changes pop up live anywhere in the app, and three steps are emailed once each

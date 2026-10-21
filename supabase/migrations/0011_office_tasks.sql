@@ -4,7 +4,7 @@
 -- these tables, and the Tasks screen stays hidden until they exist. Then, BY
 -- HAND, once: make Hazel an office admin (Mr Tito is one already, as the
 -- office manager):
---   update public.profiles set role = 'manager' where email = '<her email>';
+--   update public.profiles set role = 'manager' where email = 'operations@justusedtech.org';
 -- Her label on screen becomes "Manager". It gives her the tasks only: reports,
 -- time figures and Settings stay Mr Tito's (office_settings.manager_id).
 --
