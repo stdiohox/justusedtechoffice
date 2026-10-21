@@ -11,9 +11,10 @@ import { useAuthStore } from '@/stores/authStore'
 import { queryClient } from '@/lib/queryClient'
 import { EmptyState, Skeleton } from '@/components/ui/primitives'
 
-// The office is where everyone lands; reports and settings load on first visit.
+// The office is where everyone lands; reports, tasks and settings load on first visit.
 const Office = lazy(() => import('@/pages/Office').then((m) => ({ default: m.Office })))
 const Reports = lazy(() => import('@/pages/Reports').then((m) => ({ default: m.Reports })))
+const Tasks = lazy(() => import('@/pages/Tasks').then((m) => ({ default: m.Tasks })))
 const Settings = lazy(() => import('@/pages/Settings').then((m) => ({ default: m.Settings })))
 
 
@@ -76,6 +77,14 @@ function App() {
           element={
             <Suspense fallback={<RouteFallback />}>
               <Reports />
+            </Suspense>
+          }
+        />
+        <Route
+          path="/tasks"
+          element={
+            <Suspense fallback={<RouteFallback />}>
+              <Tasks />
             </Suspense>
           }
         />

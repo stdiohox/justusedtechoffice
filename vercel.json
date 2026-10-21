@@ -13,6 +13,9 @@
     "api/office/knock-ping.ts": {
       "includeFiles": "src/lib/**"
     },
+    "api/office/task-notify.ts": {
+      "includeFiles": "src/lib/**"
+    },
     "api/team/invite.ts": {
       "includeFiles": "src/lib/**"
     },

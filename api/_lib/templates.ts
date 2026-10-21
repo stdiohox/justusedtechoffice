@@ -75,9 +75,10 @@ const firstNameOf = (full: string) => cleanName(full).split(' ')[0] || cleanName
  * from the office's own address is cleaned first: line breaks and control
  * characters become spaces (a subject must stay one line), invisible and
  * direction-changing characters are dropped, and it is cut to 60 characters
- * so nobody can turn their name into a message.
+ * so nobody can turn their name into a message. Task titles and notes (0011)
+ * go through the same cleaning, with a longer limit.
  */
-const cleanName = (s: string) => {
+const cleanName = (s: string, max = 60) => {
   const controls = Array.from(s, (c) => {
     const n = c.charCodeAt(0)
     return n < 32 || n === 127 || n === 0x2028 || n === 0x2029 ? ' ' : c
@@ -86,7 +87,9 @@ const cleanName = (s: string) => {
     .replace(/[\u200b-\u200f\u202a-\u202e\u2060-\u2069\ufeff]/g, '')
     .replace(/\s+/g, ' ')
     .trim()
-  return one.length > 60 ? `${one.slice(0, 59)}…` : one
+  // Cut by code points, so an emoji is never split into half a surrogate pair.
+  const chars = Array.from(one)
+  return chars.length > max ? `${chars.slice(0, max - 1).join('')}…` : one
 }
 
 export interface OfficeReminderInput {
@@ -256,6 +259,60 @@ export function officeKnock(i: { recipientName: string; fromName: string; office
       `${i.fromName} knocked on your office. The knock lapses after 10 minutes.`,
       '',
       `Open the office to answer: ${i.officeUrl}`,
+    ].join('\n'),
+  }
+}
+
+export type TaskEmailKind = 'assigned' | 'done' | 'returned'
+
+/**
+ * A task step (0011), to the other person: a new task to the assignee, "done,
+ * please check" to the giver, "sent back" to the assignee. The title and the
+ * note are typed by people, so both are cleaned like names (one line, cut short).
+ */
+export function officeTask(i: {
+  kind: TaskEmailKind
+  recipientName: string
+  actorName: string
+  title: string
+  /** 'YYYY-MM-DD' or null. */
+  dueOn: string | null
+  note: string | null
+  tasksUrl: string
+}): Email {
+  const actor = cleanName(i.actorName) || 'Someone'
+  const title = cleanName(i.title, 120) || 'A task'
+  const note = i.note ? cleanName(i.note, 300) : ''
+  const due = i.dueOn
+    ? new Date(`${i.dueOn}T12:00:00Z`).toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short', timeZone: 'UTC' })
+    : ''
+  const lead =
+    i.kind === 'assigned' ? `${actor} gave you a task${due ? `, due ${due}` : ''}:`
+    : i.kind === 'done' ? `${actor} has finished a task you gave them. It is waiting for your check:`
+    : `${actor} sent a task back to you:`
+  const noteLabel = i.kind === 'returned' ? 'What still needs doing' : 'Their note'
+  const subject =
+    i.kind === 'assigned' ? `New task from ${actor}: ${title}`
+    : i.kind === 'done' ? `Done, please check: ${title}`
+    : `Sent back: ${title}`
+  const linkLabel = i.kind === 'done' ? 'Open Tasks to check it' : 'Open Tasks'
+  return {
+    subject: cleanName(subject, 150),
+    html: shell(
+      p(`Hi ${esc(firstNameOf(i.recipientName))},`) +
+        p(esc(lead)) +
+        p(`<strong>${esc(title)}</strong>`) +
+        (note ? p(`<span style="color:${MUTED};">${esc(noteLabel)}:</span> ${esc(note)}`) : '') +
+        link(i.tasksUrl, linkLabel),
+    ),
+    text: [
+      `Hi ${firstNameOf(i.recipientName)},`,
+      '',
+      lead,
+      title,
+      ...(note ? ['', `${noteLabel}: ${note}`] : []),
+      '',
+      `${linkLabel}: ${i.tasksUrl}`,
     ].join('\n'),
   }
 }

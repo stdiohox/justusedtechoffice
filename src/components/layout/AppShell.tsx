@@ -1,5 +1,5 @@
 import { NavLink, Outlet } from 'react-router-dom'
-import { Building2, ClipboardCheck, LogOut, Moon, Settings, Sun } from 'lucide-react'
+import { Building2, ClipboardCheck, ListChecks, LogOut, Moon, Settings, Sun } from 'lucide-react'
 import { useAuthStore } from '@/stores/authStore'
 import { useToastStore } from '@/stores/toastStore'
 import { useThemeStore } from '@/stores/themeStore'
@@ -10,10 +10,13 @@ import { SCROLLPORT_ID } from '@/lib/scrollport'
 import { Toast } from '@/components/ui/Toast'
 import { KnockLayer } from '@/components/office/KnockLayer'
 import { CheckinLayer } from '@/components/office/CheckinLayer'
+import { TaskLayer } from '@/components/office/TaskLayer'
 import { OfficePresence } from '@/components/office/OfficePresence'
 import { StatusMenu } from '@/components/office/StatusMenu'
 import { Photo } from '@/components/ui/Photo'
 import { usePhotoRefresh } from '@/hooks/usePhotos'
+import { useTasks } from '@/hooks/useTasks'
+import { needsMe } from '@/lib/tasks'
 
 /**
  * The office's frame: a dark sidebar on a computer, a bottom tab bar on a
@@ -24,6 +27,8 @@ import { usePhotoRefresh } from '@/hooks/usePhotos'
 const NAV = [
   { to: '/office', label: 'Office', icon: Building2, managerOnly: false },
   { to: '/reports', label: 'Reports', icon: ClipboardCheck, managerOnly: false },
+  // Shown once 0011 is applied.
+  { to: '/tasks', label: 'Tasks', icon: ListChecks, managerOnly: false },
   { to: '/settings', label: 'Settings', icon: Settings, managerOnly: true },
 ]
 
@@ -46,8 +51,12 @@ export function AppShell() {
   const toast = useToastStore((s) => s.toast)
   const hideToast = useToastStore((s) => s.hideToast)
   usePhotoRefresh()
+  const { data: tasks } = useTasks()
 
-  const items = NAV.filter((n) => !n.managerOnly || isManager)
+  const items = NAV.filter((n) => (!n.managerOnly || isManager) && (n.to !== '/tasks' || tasks?.available))
+  // Tasks waiting on you: given to you and not started, or done and waiting for your check.
+  const waiting = profile && tasks?.available ? tasks.rows.filter((t) => needsMe(t, profile.id)).length : 0
+  const badge = (to: string) => (to === '/tasks' && waiting ? waiting : 0)
   const name = profile?.full_name ?? ''
 
   return (
@@ -97,6 +106,12 @@ export function AppShell() {
             >
               <Icon size={17} strokeWidth={1.75} aria-hidden />
               {label}
+              {badge(to) ? (
+                <span className="ml-auto rounded-full bg-gold px-1.5 py-px text-[11px] font-bold text-ink tabular-nums">
+                  {badge(to)}
+                  <span className="sr-only"> waiting on you</span>
+                </span>
+              ) : null}
             </NavLink>
           ))}
         </nav>
@@ -143,8 +158,17 @@ export function AppShell() {
               )
             }
           >
-            <Icon size={19} strokeWidth={1.75} aria-hidden />
+            <span className="relative">
+              <Icon size={19} strokeWidth={1.75} aria-hidden />
+              {badge(to) ? (
+                <span aria-hidden className="absolute -top-1.5 -right-2.5 min-w-4 rounded-full bg-gold px-1 text-center text-[10px] leading-4 font-bold text-ink tabular-nums">
+                  {badge(to)}
+                </span>
+              ) : null}
+            </span>
             {label}
+            {/* After the label, so it reads "Tasks, 3 waiting on you". */}
+            {badge(to) ? <span className="sr-only">, {badge(to)} waiting on you</span> : null}
           </NavLink>
         ))}
         <button
@@ -162,6 +186,7 @@ export function AppShell() {
       <OfficePresence />
       <KnockLayer key={profile?.id ?? 'signed-out'} />
       <CheckinLayer key={`checkin-${profile?.id ?? 'signed-out'}`} />
+      <TaskLayer key={`tasks-${profile?.id ?? 'signed-out'}`} />
 
       {toast ? <Toast key={toast.id} message={toast.message} type={toast.type} onClose={hideToast} /> : null}
     </div>

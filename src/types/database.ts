@@ -1,6 +1,6 @@
 /**
  * The office's tables, as the screens read them. Hand-written to match the
- * migrations in supabase/migrations (0001 to 0010).
+ * migrations in supabase/migrations (0001 to 0011).
  */
 
 /** manager: Mr Tito. member: everyone else (0001). */
@@ -208,4 +208,38 @@ export interface OfficeRosterDay {
   work_date: string
   expected: boolean
   absence: string | null
+}
+
+/* ------------------------------------------------------------ tasks (0011) */
+
+export type TaskStatus = 'open' | 'in_progress' | 'done' | 'approved' | 'cancelled'
+export type TaskEventKind = 'assigned' | 'started' | 'done' | 'approved' | 'returned' | 'cancelled'
+
+/** office_tasks: one task one person gave another. Changed only through the 0011 functions. */
+export interface OfficeTask {
+  id: string
+  title: string
+  details: string | null
+  assigned_by: string
+  assigned_to: string
+  /** The office's calendar date, 'YYYY-MM-DD', or null. */
+  due_on: string | null
+  status: TaskStatus
+  done_note: string | null
+  done_link: string | null
+  done_at: string | null
+  closed_at: string | null
+  closed_by: string | null
+  created_at: string
+  updated_at: string
+}
+
+/** office_task_events: a task's history, one row per step. */
+export interface OfficeTaskEvent {
+  id: string
+  task_id: string
+  actor: string | null
+  kind: TaskEventKind
+  note: string | null
+  created_at: string
 }

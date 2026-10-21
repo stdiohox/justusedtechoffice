@@ -10,7 +10,8 @@
  * must stay true of the code; if the office starts recording something new,
  * the notice changes first.
  */
-export const NOTICE_VERSION = 1
+/** 2 (0011): tasks the team gives each other. */
+export const NOTICE_VERSION = 2
 
 export const NOTICE_TITLE = 'How the office records your time'
 
@@ -28,6 +29,7 @@ export const NOTICE: NoticeSection[] = [
       'After 10 minutes with no activity in the office you show as away. After 30 more minutes away you are signed out of the office, and you press “I’m back” to return.',
       'If you choose “Working elsewhere”, a “Still there?” comes about every 30 minutes; answer it within 5 minutes. Do not disturb lasts up to 90 minutes at a time.',
       'What you write on your door, your answers to check-ins, and the notes you add to your day.',
+      'Tasks the team gives each other: what the task is, who gave it to whom, its due date, when it was started, done, approved, sent back or cancelled, by whom, and the notes and links added along the way.',
     ],
   },
   {
@@ -42,6 +44,7 @@ export const NOTICE: NoticeSection[] = [
       'Mr Tito sees your reports, your time figures and your notes, side by side. You see exactly the same figures about yourself under My reports.',
       'Everyone in the office sees what is on your door and whether you are in. Office chats, and your reply when you answer a knock “not now”, are readable only by the two people involved.',
       'Mr Tito sees which first steps you have done in the office, and whether and when you read this notice.',
+      'A task is seen by the person who gave it and the person it was given to. The office admins, Mr Tito and Hazel, see every task. Hazel sees only tasks: not your reports, your time figures or your notes.',
     ],
   },
   {

@@ -1,13 +1,13 @@
 # JUSTUSED Office
 
 The JustUsedTech team's virtual office: who is in, doors and knocks with a one-hour chat, three
-daily reports with proof, check-ins, time in the office, email reminders and Mr Tito's 18:30
-summary. It is Tito Finance's virtual office (tito-crm `/office` and `/reports`, with the
+daily reports with proof, check-ins, time in the office, tasks the team gives each other, email
+reminders and Mr Tito's 18:30 summary. It is Tito Finance's virtual office (tito-crm `/office` and `/reports`, with the
 improvements from its competitor research) lifted into its own app, with its own Supabase
 project. No data is shared with Tito Finance, and there is no CRM, so there is no work feed.
 
 React 19 · Vite · TypeScript · Tailwind CSS 4 · Supabase (Auth, Postgres, Realtime, Storage,
-pg_cron, pg_net, Vault) · Vercel (static app plus four functions in `api/`) · Resend. Package
+pg_cron, pg_net, Vault) · Vercel (static app plus five functions in `api/`) · Resend. Package
 manager: **npm**.
 
 ## How people get in
@@ -33,7 +33,7 @@ All of this is done by hand; nothing here holds database credentials.
    - Realtime > Settings: leave "Allow public access" ON (the office channel is private and
      guarded by its own RLS).
 2. **Migrations**, in the SQL editor, each file as one run, in order:
-   `0001_team`, `0002_office_reports`, then `0004` to `0010`. **Leave `0003` for step 6.**
+   `0001_team`, `0002_office_reports`, then `0004` to `0011`. **Leave `0003` for step 6.**
    Each runs in a transaction and checks itself; a failure changes nothing.
 3. **Mr Tito** (0001's and 0002's headers):
    ```sql
@@ -60,6 +60,26 @@ and acknowledged. Have it reviewed by a Nigerian data protection lawyer or a lic
 (NDPA 2023; the reasoning is in tito-crm's OFFICE-FEATURES-PLAN.md section 2.3 and
 OFFICE-ACTIVITY-PLAN.md section 6). Acknowledging is "I have read this", not consent.
 
+## Tasks
+
+Anyone on the team gives anyone else a task (a title, optional details, an optional due date) under
+**Tasks**. The assignee starts it and marks it done, with an optional note and link. The person
+who gave it then checks it: **Approve**, or **Send back** with what still needs doing, which puts it
+back in progress. The giver (or an admin) can cancel a task that is not yet approved.
+
+- **Who sees what:** a task is seen by the person who gave it and the person it was given to. The
+  office admins see every task (an **Everyone** tab) and can check or cancel any of them. Admins are
+  the office manager and anyone whose `profiles.role` is `manager`. To make Hazel one, in the SQL editor:
+  `update public.profiles set role = 'manager' where email = '<her email>';`. That gives her the
+  tasks only; reports, time figures and Settings stay Mr Tito's.
+- **Telling people:** a badge on Tasks counts what waits on you (new tasks, and tasks you gave that
+  are done). Changes pop up live anywhere in the app, and three steps are emailed once each
+  (`api/office/task-notify`): a new task to the assignee, "done, please check" to the giver, and
+  "sent back" to the assignee.
+- **Limits:** 30 new tasks an hour per person; approved and cancelled tasks leave the lists after 60
+  days (the rows stay).
+- Migration `0011_office_tasks` switches it on; until it is applied the Tasks tab stays hidden.
+
 ## Trial mode
 
 The office starts in trial: sign-outs after inactivity and missed check-ins are recorded and
@@ -84,7 +104,7 @@ The 10 minutes to "away" is in the screens (`src/lib/presence.ts`), not the data
 
 ## Rolling back
 
-`supabase/rollbacks/`, one per migration, **newest first** (0010 down to 0002). Each is one
+`supabase/rollbacks/`, one per migration, **newest first** (0011 down to 0002). Each is one
 transaction. 0002's and 0007's leave their storage buckets (`proof`, `avatars`): empty and delete
 them in Storage afterwards (Supabase refuses SQL deletes on storage tables).
 
