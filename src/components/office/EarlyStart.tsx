@@ -55,7 +55,7 @@ export function EarlyStart({ settings, date }: { settings: OfficeSettings; date:
         <p className="flex flex-wrap items-center gap-x-2 gap-y-1 text-[13px] text-text-primary">
           <Sunrise size={15} strokeWidth={1.75} aria-hidden className="text-text-muted" />
           You said you started at <span className="tnum font-medium">{said}</span>
-          {mine?.note ? <span className="text-text-secondary">: {mine.note}</span> : null}
+          {mine?.note ? <span className="text-text-secondary">({mine.note})</span> : null}
           <Button variant="ghost" size="sm" className={TOUCH} onClick={openForm}>
             Change
           </Button>
