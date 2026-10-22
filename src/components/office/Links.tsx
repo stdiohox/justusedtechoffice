@@ -1,4 +1,4 @@
-import { useRef } from 'react'
+import { useRef, useState } from 'react'
 import { ExternalLink, Plus, X } from 'lucide-react'
 import { Button, Input, Label } from '@/components/ui/primitives'
 import { TOUCH } from '@/lib/touch'
@@ -14,13 +14,19 @@ export function LinksField({
   links,
   onChange,
   multi,
+  errorId,
 }: {
   id: string
   links: string[]
   onChange: (links: string[]) => void
   multi: boolean
+  /** The form's error, when it is about the links: each bad box points at it. */
+  errorId?: string
 }) {
   const boxes = useRef<(HTMLInputElement | null)[]>([])
+  // Said after adding or removing a box: focus moves, but the count changed too.
+  const [said, setSaid] = useState('')
+  const bad = (v: string) => !!errorId && !!v.trim() && !HTTP_LINK.test(v.trim())
   const focusBox = (k: number) => requestAnimationFrame(() => boxes.current[k]?.focus())
   const rows = links.length ? links : ['']
 
@@ -36,6 +42,8 @@ export function LinksField({
           maxLength={2000}
           value={rows[0]}
           onChange={(e) => onChange([e.target.value])}
+          invalid={bad(rows[0])}
+          aria-describedby={bad(rows[0]) ? errorId : undefined}
           className={TOUCH}
         />
       </div>
@@ -59,6 +67,8 @@ export function LinksField({
               placeholder="https://"
               maxLength={2000}
               aria-label={`Link ${k + 1}`}
+              invalid={bad(value)}
+              aria-describedby={bad(value) ? `${errorId} ${id}-links-hint` : `${id}-links-hint`}
               value={value}
               onChange={(e) => onChange(rows.map((v, j) => (j === k ? e.target.value : v)))}
               className={TOUCH}
@@ -69,6 +79,7 @@ export function LinksField({
                 aria-label={`Remove link ${k + 1}`}
                 onClick={() => {
                   onChange(rows.filter((_, j) => j !== k))
+                  setSaid(`Link ${k + 1} removed, ${rows.length - 1} left.`)
                   focusBox(Math.max(0, k - 1))
                 }}
                 className="press flex size-9 shrink-0 items-center justify-center rounded-[8px] text-text-muted hover:bg-hover hover:text-text-primary max-sm:size-11"
@@ -88,6 +99,7 @@ export function LinksField({
           icon={<Plus size={14} strokeWidth={1.75} />}
           onClick={() => {
             onChange([...rows, ''])
+            setSaid(`Link ${rows.length + 1} of ${MAX_LINKS} added.`)
             focusBox(rows.length)
           }}
         >
@@ -96,6 +108,9 @@ export function LinksField({
       ) : null}
       <p id={`${id}-links-hint`} className="mt-1 text-[12px] text-text-muted">
         Up to {MAX_LINKS} links, each starting with http:// or https://.
+      </p>
+      <p role="status" className="sr-only">
+        {said}
       </p>
     </div>
   )

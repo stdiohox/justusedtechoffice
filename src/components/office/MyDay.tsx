@@ -78,7 +78,7 @@ function ReportForm({ kind, date, overdue }: { kind: ReportKind; date: string; o
   }
 
   return (
-    <form onSubmit={onSubmit} className="mt-3 space-y-3">
+    <form onSubmit={onSubmit} className="mt-3 space-y-3" noValidate>
       {overdue ? (
         <p className="text-[13px] text-state-danger">Past the deadline. You can still file it; it will be marked late.</p>
       ) : null}
@@ -143,9 +143,13 @@ function ReportForm({ kind, date, overdue }: { kind: ReportKind; date: string; o
         </div>
       ) : null}
 
-      {proof ? <LinksField id={id} links={links} onChange={setLinks} multi={multi} /> : null}
+      {proof ? (
+        <LinksField id={id} links={links} onChange={setLinks} multi={multi} errorId={problem && linksProblem(links) ? `${id}-err` : undefined} />
+      ) : null}
 
-      <FieldError>{problem}</FieldError>
+      <div id={`${id}-err`}>
+        <FieldError>{problem}</FieldError>
+      </div>
       <Button type="submit" className={TOUCH} loading={submit.isPending}>
         {submit.isPending && files.length ? 'Uploading' : `File ${REPORT_LABEL[kind].toLowerCase()}`}
       </Button>

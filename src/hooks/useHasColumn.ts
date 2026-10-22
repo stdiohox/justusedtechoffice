@@ -19,7 +19,9 @@ export function useHasColumn(table: string, column: string): boolean {
       if (error) throw error
       return true
     },
-    staleTime: 30 * 60_000,
+    // Short, so a tab open while the migration is applied catches up soon.
+    staleTime: 5 * 60_000,
+    retry: 1,
   })
   return data === true
 }

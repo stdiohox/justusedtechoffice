@@ -27,7 +27,7 @@ import {
 import { useAuthStore } from '@/stores/authStore'
 import { useHasColumn } from '@/hooks/useHasColumn'
 import { LinkList, LinksField } from '@/components/office/Links'
-import { linksOf } from '@/lib/links'
+import { linksOf, linksProblem } from '@/lib/links'
 import { useToastStore } from '@/stores/toastStore'
 import { localParts } from '@/lib/timezones'
 import { TOUCH } from '@/lib/touch'
@@ -1044,7 +1044,13 @@ function TaskDetail({
                     placeholder="What you did, or where to find it"
                   />
                 </div>
-                <LinksField id={id} links={draft.links} onChange={(links) => setDraft({ ...draft, links })} multi={multiLinks} />
+                <LinksField
+                  id={id}
+                  links={draft.links}
+                  onChange={(links) => setDraft({ ...draft, links })}
+                  multi={multiLinks}
+                  errorId={error && linksProblem(draft.links) ? `${id}-task-err` : undefined}
+                />
                 {/* Hidden only when 0013 is not applied; a failed read still offers it. */}
                 {filesData?.available !== false ? (
                   <ProofPicker files={draft.files} onChange={(files) => setDraft({ ...draft, files })} />
@@ -1063,7 +1069,9 @@ function TaskDetail({
                 />
               </div>
             )}
-            <FieldError>{error}</FieldError>
+            <div id={`${id}-task-err`}>
+              <FieldError>{error}</FieldError>
+            </div>
             <div className="flex flex-wrap justify-end gap-2">
               <Button
                 type="button"

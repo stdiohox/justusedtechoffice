@@ -33,7 +33,7 @@ All of this is done by hand; nothing here holds database credentials.
    - Realtime > Settings: leave "Allow public access" ON (the office channel is private and
      guarded by its own RLS).
 2. **Migrations**, in the SQL editor, each file as one run, in order:
-   `0001_team`, `0002_office_reports`, then `0004` to `0014`. **Leave `0003` for step 6.**
+   `0001_team`, `0002_office_reports`, then `0004` to `0016`. **Leave `0003` for step 6.**
    Each runs in a transaction and checks itself; a failure changes nothing.
 3. **Mr Tito** (0001's and 0002's headers):
    ```sql
@@ -63,7 +63,7 @@ OFFICE-ACTIVITY-PLAN.md section 6). Acknowledging is "I have read this", not con
 ## Tasks
 
 Anyone on the team gives anyone else a task (a title, optional details, an optional due date) under
-**Tasks**. The assignee starts it and marks it done, with an optional note and link. The person
+**Tasks**. The assignee starts it and marks it done, with an optional note, links (up to 5 since 0016) and images. The person
 who gave it then checks it: **Approve**, or **Send back** with what still needs doing, which puts it
 back in progress. The giver (or an admin) can cancel a task that is not yet approved.
 
@@ -71,7 +71,8 @@ back in progress. The giver (or an admin) can cancel a task that is not yet appr
   office admins see every task (an **Everyone** tab) and can check or cancel any of them. Admins are
   the office manager and anyone whose `profiles.role` is `manager`. To make Hazel one, in the SQL editor:
   `update public.profiles set role = 'manager' where email = 'operations@justusedtech.org';`. That gives her the
-  tasks only; reports, time figures and Settings stay Mr Tito's.
+  tasks, and (since 0016) inviting people and setting roles in Settings; reports, time figures,
+  switching people off, photos and the office settings stay Mr Tito's.
 - **Telling people:** a badge on Tasks counts what waits on you (new tasks, and tasks you gave that
   are done). Changes pop up live anywhere in the app, and three steps are emailed once each
   (`api/office/task-notify`): a new task to the assignee, "done, please check" to the giver, and
@@ -106,6 +107,29 @@ details, due date, or who it is for. Each edit is one step in the task's history
 The person it is for is told in the office and by email (at most one edit email per task every 30
 minutes). Moving a task starts it afresh, as a new task, for the new person; the person who had it no
 longer sees it.
+
+## Proof, links, roles, and Hazel inviting people (0016)
+
+- **Proof is optional.** Midday and end-of-day reports still need a few words on what was worked on;
+  a screenshot or file is optional, like the links.
+- **Several links**, up to 5, on a report and on a task handed in ("Add another link"). Each must
+  start with http:// or https://. Older reports and tasks keep their one link.
+- **Roles** (job titles): "CEO", "Operations Manager". Given when someone is invited (Role, optional),
+  shown on their door and beside their name, and changed in Settings > The team by Mr Tito or Hazel.
+  A role is a label only: access stays as it was (Access column: Manager = admin).
+- **Hazel invites people** from Settings, as Mr Tito does: always as a member. She sees and can
+  withdraw the invites waiting. Switching people off, photos and the office settings stay Mr Tito's.
+
+To apply: run `0016_proof_links_and_titles.sql` in the SQL editor, then merge `proof-links-titles`
+(Vercel deploys main). Then set the roles of the people already on the team in Settings > The team
+(for example Mr Tito: CEO; Hazel: Operations Manager), or in SQL:
+`update public.profiles set job_title = 'CEO' where email = '<his email>';`
+Before 0016 is applied the new screens fall back: one link box, no Role field or column; the
+reports still ask for proof until then. Hazel's Settings page appears with the deploy, and her
+invites list fills once 0016 is in.
+
+Rollback: `0016_proof_links_and_titles.down.sql` (proof required again; each report or task keeps
+its first link only; roles are dropped; invites back to Mr Tito alone).
 
 ## Ratings and the weekly leaderboard (0012)
 
@@ -143,7 +167,7 @@ The 10 minutes to "away" is in the screens (`src/lib/presence.ts`), not the data
 
 ## Rolling back
 
-`supabase/rollbacks/`, one per migration, **newest first** (0014 down to 0002). Each is one
+`supabase/rollbacks/`, one per migration, **newest first** (0016 down to 0002). Each is one
 transaction. 0002's and 0007's leave their storage buckets (`proof`, `avatars`): empty and delete
 them in Storage afterwards (Supabase refuses SQL deletes on storage tables).
 
