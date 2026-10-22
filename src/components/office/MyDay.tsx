@@ -1,6 +1,6 @@
 import { useEffect, useId, useRef, useState } from 'react'
 import { AlertCircle, CalendarOff, Check, Paperclip, X } from 'lucide-react'
-import { Button, EmptyState, FieldError, Input, Label, Skeleton, Textarea } from '@/components/ui/primitives'
+import { Button, EmptyState, FieldError, Label, Skeleton, Textarea } from '@/components/ui/primitives'
 import { ReportDetail, StatusChip } from '@/components/office/ReportBits'
 import {
   MAX_FILES,
@@ -12,7 +12,7 @@ import {
   type ReportWithFiles,
 } from '@/hooks/useOffice'
 import { useNow } from '@/hooks/useNow'
-import { REPORT_KINDS, REPORT_LABEL, checkpointState, checkpointWindow, hhmm, isWorkday, needsProof } from '@/lib/office'
+import { REPORT_KINDS, REPORT_LABEL, checkpointState, checkpointWindow, hhmm, isWorkday, takesProof } from '@/lib/office'
 import { EarlyStart } from '@/components/office/EarlyStart'
 import { localParts } from '@/lib/timezones'
 import { useAuthStore } from '@/stores/authStore'
@@ -27,6 +27,9 @@ import { sumDays } from '@/lib/activity'
 import { addDays, weekdayOf } from '@/lib/timezones'
 import { AttendanceMonth } from '@/components/office/AttendanceMonth'
 import { NoticeLink } from '@/components/office/Onboarding'
+import { LinksField } from '@/components/office/Links'
+import { linksProblem } from '@/lib/links'
+import { useHasColumn } from '@/hooks/useHasColumn'
 
 /**
  * A member's day: sign-in, midday, end of day. Each card opens at its time and
@@ -44,11 +47,13 @@ function ReportForm({ kind, date, overdue }: { kind: ReportKind; date: string; o
   const id = useId()
   const fileInput = useRef<HTMLInputElement>(null)
   const [body, setBody] = useState('')
-  const [link, setLink] = useState('')
+  const [links, setLinks] = useState<string[]>([''])
+  // Several links once 0016 is in; one box before.
+  const multi = useHasColumn('office_reports', 'links')
   const [files, setFiles] = useState<File[]>([])
   const [problem, setProblem] = useState<string | null>(null)
   const submit = useSubmitReport()
-  const proof = needsProof(kind)
+  const proof = takesProof(kind)
 
   const addFiles = (list: FileList | null) => {
     const picked = Array.from(list ?? [])
@@ -63,11 +68,11 @@ function ReportForm({ kind, date, overdue }: { kind: ReportKind; date: string; o
   const onSubmit = (e: React.FormEvent) => {
     e.preventDefault()
     if (proof && !body.trim()) return setProblem('Say what you worked on.')
-    if (proof && !files.length) return setProblem('Attach proof of work: a screenshot or a file.')
-    if (link.trim() && !/^https?:\/\/\S+$/i.test(link.trim())) return setProblem('The link must start with http:// or https://.')
+    const linkProblem = linksProblem(links)
+    if (linkProblem) return setProblem(linkProblem)
     setProblem(null)
     submit.mutate(
-      { kind, date, body, link, files },
+      { kind, date, body, links, multi, files },
       { onError: (err) => setProblem(err instanceof Error ? err.message : 'That did not go through. Try again.') },
     )
   }
@@ -85,7 +90,7 @@ function ReportForm({ kind, date, overdue }: { kind: ReportKind; date: string; o
       {proof ? (
         <div>
           <p id={`${id}-proof-label`} className="mb-1.5 text-[11px] font-medium tracking-[0.08em] text-text-secondary uppercase">
-            Proof of work
+            Proof of work (optional)
           </p>
           {/* Out of the tab order: the button below is the one control. */}
           <input
@@ -138,21 +143,7 @@ function ReportForm({ kind, date, overdue }: { kind: ReportKind; date: string; o
         </div>
       ) : null}
 
-      {proof ? (
-        <div>
-          <Label htmlFor={`${id}-link`}>Link (optional)</Label>
-          <Input
-            id={`${id}-link`}
-            type="url"
-            inputMode="url"
-            placeholder="https://"
-            maxLength={2000}
-            value={link}
-            onChange={(e) => setLink(e.target.value)}
-            className={TOUCH}
-          />
-        </div>
-      ) : null}
+      {proof ? <LinksField id={id} links={links} onChange={setLinks} multi={multi} /> : null}
 
       <FieldError>{problem}</FieldError>
       <Button type="submit" className={TOUCH} loading={submit.isPending}>

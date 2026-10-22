@@ -10,7 +10,7 @@ import {
   type OfficeMemberWithUser,
 } from '@/hooks/useOffice'
 import { useTeam } from '@/hooks/useTeam'
-import { roleLabel } from '@/lib/constants'
+import { titleOf } from '@/lib/constants'
 import type { OfficeSettings } from '@/types/database'
 import { Avatar } from '@/components/office/OfficeVisuals'
 import { TOUCH } from '@/lib/touch'
@@ -51,7 +51,7 @@ function AddMember({ members }: { members: OfficeMemberWithUser[] }) {
           <option value="">Choose a team member</option>
           {candidates.map((u) => (
             <option key={u.id} value={u.id}>
-              {u.full_name} ({roleLabel(u.role)})
+              {u.full_name} ({titleOf(u)})
             </option>
           ))}
         </Select>

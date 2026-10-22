@@ -7,3 +7,9 @@ export const ROLES: { value: Role; label: string }[] = [
 ]
 
 export const roleLabel = (v: Role): string => ROLES.find((r) => r.value === v)?.label ?? 'Team member'
+
+/**
+ * What someone is shown as: their job title (0016: "CEO", "Operations
+ * Manager"), or, with none set, their team role as before.
+ */
+export const titleOf = (p: { role: Role; job_title?: string | null }): string => p.job_title?.trim() || roleLabel(p.role)

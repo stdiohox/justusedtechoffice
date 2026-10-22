@@ -29,8 +29,8 @@ export function checkpointWindow(s: OfficeSettings, kind: ReportKind): { opens: 
 /** "09:02", on the office's clock rather than the viewer's. */
 export const officeClock = (zone: string, iso: string): string => localParts(zone, new Date(iso)).time
 
-/** Proof is required for midday and EOD (tito-crm's VIRTUAL-OFFICE-PLAN decisions). */
-export const needsProof = (kind: ReportKind): boolean => kind !== 'signin'
+/** Midday and EOD take proof of work: files and links, all optional since 0016. */
+export const takesProof = (kind: ReportKind): boolean => kind !== 'signin'
 
 export function isWorkday(s: OfficeSettings, date: string): boolean {
   const d = weekdayOf(date)

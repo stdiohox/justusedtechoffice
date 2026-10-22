@@ -15,7 +15,7 @@ import {
   type OfficeAlertLine,
   type RatingLine,
 } from '../_lib/templates.js'
-import { REPORT_KINDS, REPORT_LABEL, checkpointWindow, hhmm, isWorkday, needsProof } from '../../src/lib/office.js'
+import { REPORT_KINDS, REPORT_LABEL, checkpointWindow, hhmm, isWorkday, takesProof } from '../../src/lib/office.js'
 import { localParts } from '../../src/lib/timezones.js'
 import { fmtMinutes, isShortDay } from '../../src/lib/activity.js'
 import type {
@@ -249,7 +249,7 @@ async function sendReminders(ctx: Ctx, due: OfficeRosterDay[], reports: OfficeRe
           name: ctx.names.get(d.user_id) ?? '',
           what: REPORT_LABEL[kind].toLowerCase(),
           deadline,
-          needsProof: needsProof(kind),
+          takesProof: takesProof(kind),
           reportsUrl: ctx.reportsUrl,
         }),
         `office-remind/${kind}/${ctx.date}/${d.user_id}`,

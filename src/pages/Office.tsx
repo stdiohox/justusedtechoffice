@@ -8,7 +8,7 @@ import { Button, EmptyState, Skeleton } from '@/components/ui/primitives'
 import { useOfficeMembers, useOfficeRole, useOfficeSettings, type OfficeMemberWithUser } from '@/hooks/useOffice'
 import { usePresence } from '@/hooks/useOfficePresence'
 import { useNow } from '@/hooks/useNow'
-import { roleLabel } from '@/lib/constants'
+import { titleOf } from '@/lib/constants'
 import { mapStatus, type MapStatus } from '@/lib/presence'
 import { localParts, wallTimeToInstant } from '@/lib/timezones'
 import { doorView, steppedOut, EMPTY_DOOR, type DoorView } from '@/lib/door'
@@ -81,7 +81,7 @@ function Room({
         <Avatar name={name} userId={member.user_id} status={status} size={isManager ? 'lg' : 'md'} onFloor />
         <div className="min-w-0">
           <p className={cn('truncate font-medium text-ivory', isManager ? 'text-[16px]' : 'text-[15px]')}>{name}</p>
-          <p className="truncate text-[12px] text-[rgba(246,250,247,0.70)]">{member.user ? roleLabel(member.user.role) : ''}</p>
+          <p className="truncate text-[12px] text-[rgba(246,250,247,0.70)]">{member.user ? titleOf(member.user) : ''}</p>
         </div>
       </div>
       <DoorNote view={door} today={today} />

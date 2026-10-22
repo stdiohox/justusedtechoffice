@@ -5,6 +5,7 @@ import { useAuthStore } from '@/stores/authStore'
 import { useOfficeRole } from '@/hooks/useOffice'
 import { leaderboardKeys } from '@/hooks/useLeaderboard'
 import type { OfficeTask, OfficeTaskEvent, OfficeTaskFile } from '@/types/database'
+import { linksProblem, tidyLinks } from '@/lib/links'
 
 /**
  * Tasks the team gives each other (0011). Reads go straight to the tables,
@@ -245,6 +246,7 @@ export const useStartTask = () => useTaskRpc((id: string) => supabase.rpc('start
  * Mark done, with any proof images (0013): each is uploaded into the task's
  * folder first, one at a time, then complete_task checks and records them.
  * With no images the call is the one from before 0013, so it works on either.
+ * Links: the list when 0016 is in (`multi`), else the first link alone.
  */
 export const useCompleteTask = () => {
   const userId = useAuthStore((s) => s.profile?.id)
@@ -252,15 +254,16 @@ export const useCompleteTask = () => {
   // hand-in) reuses them instead of uploading the same image again.
   const uploadedRef = useRef(new WeakMap<File, string>())
   return useTaskRpc(
-    async (i: { id: string; note: string; link: string; files: File[]; personal: boolean }) => {
+    async (i: { id: string; note: string; links: string[]; multi: boolean; files: File[]; personal: boolean }) => {
+      const tidy = tidyLinks(i.links)
+      const links = i.multi ? { p_link: null, p_links: tidy.length ? tidy : null } : { p_link: tidy[0] ?? null }
+      // Checked before any upload: the server would refuse it after them.
+      const linkProblem = linksProblem(i.links)
+      if (linkProblem) return { data: null, error: { message: linkProblem } }
       if (!i.files.length) {
-        return supabase.rpc('complete_task', { p_id: i.id, p_note: i.note || null, p_link: i.link || null })
+        return supabase.rpc('complete_task', { p_id: i.id, p_note: i.note || null, ...links })
       }
       if (!userId) return { data: null, error: { message: 'Sign in again and retry.' } }
-      // Checked before any upload: the server would refuse it after them.
-      if (i.link && !/^https?:\/\/\S+$/i.test(i.link)) {
-        return { data: null, error: { message: 'The link must start with http:// or https://.' } }
-      }
       const uploaded: { path: string; name: string }[] = []
       for (const file of i.files) {
         let path = uploadedRef.current.get(file)
@@ -275,7 +278,7 @@ export const useCompleteTask = () => {
         }
         uploaded.push({ path, name: file.name })
       }
-      return supabase.rpc('complete_task', { p_id: i.id, p_note: i.note || null, p_link: i.link || null, p_files: uploaded })
+      return supabase.rpc('complete_task', { p_id: i.id, p_note: i.note || null, p_files: uploaded, ...links })
     },
     // A personal task (0015) is closed by being done: nobody to tell.
     (i) => !i.personal,

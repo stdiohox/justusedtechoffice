@@ -16,9 +16,15 @@ export function ProtectedRoute({ children }: { children: ReactNode }) {
   return <>{children}</>
 }
 
-/** Settings is Mr Tito's. Anyone else sees why, and a way back; never a blank screen. */
-export function ManagerRoute({ children }: { children: ReactNode }) {
+/**
+ * Settings is for the office admins: Mr Tito, and anyone labelled manager
+ * (Hazel), who invites people and sets roles there. Anyone else sees why, and
+ * a way back; never a blank screen. Display only: RLS and the routes decide.
+ */
+export function AdminRoute({ children }: { children: ReactNode }) {
   const { loading, isError, isManager } = useOfficeRole()
+  const role = useAuthStore((s) => s.profile?.role)
+  const isAdmin = isManager || role === 'manager'
   const navigate = useNavigate()
   const queryClient = useQueryClient()
   if (loading) return <div className="min-h-[50dvh] bg-surface" />
@@ -36,11 +42,11 @@ export function ManagerRoute({ children }: { children: ReactNode }) {
       />
     )
   }
-  if (!isManager) {
+  if (!isAdmin) {
     return (
       <EmptyState
         icon={<ShieldAlert size={22} strokeWidth={1.5} />}
-        title="This area is for the office manager"
+        title="This area is for the office admins"
         body="Ask Mr Tito if you need something changed here."
         action={
           <Button variant="secondary" onClick={() => navigate('/office')}>

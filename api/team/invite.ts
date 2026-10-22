@@ -5,8 +5,11 @@ import { isRefusal, officeEnv, parseBody, serverErrorBody, serviceClient, setPas
 import { officeInvite } from '../_lib/templates.js'
 
 /**
- * Mr Tito invites someone (Settings > Invite someone). Office manager only:
- * the caller must be office_settings.manager_id and an active profile.
+ * An office admin invites someone (Settings > Invite someone): Mr Tito
+ * (office_settings.manager_id), or anyone labelled manager (Hazel), the same
+ * people as 0011's is_task_admin(), and only while their profile is active.
+ * The invite is always for a member, with an optional job title (0016), sent
+ * only when given, so this works before 0016 is applied.
  *
  *   1. The invite is recorded in public.invites (0001), name and email.
  *   2. A one-time token is made with the Auth admin API (service role) and
@@ -37,30 +40,40 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   const userId = await verifiedUserId(req, db)
   if (isRefusal(userId)) return res.status(userId.status).json({ error: userId.error })
 
-  const body = parseBody<{ email?: unknown; fullName?: unknown }>(req)
+  const body = parseBody<{ email?: unknown; fullName?: unknown; jobTitle?: unknown }>(req)
   if (isRefusal(body)) return res.status(body.status).json({ error: body.error })
   const email = typeof body.email === 'string' ? body.email.trim().toLowerCase() : ''
   const fullName = typeof body.fullName === 'string' ? body.fullName.replace(/\s+/g, ' ').trim() : ''
   if (!EMAIL.test(email) || email.length > 254) return res.status(400).json({ error: 'Give an email address they read.' })
   if (!fullName || fullName.length > 120) return res.status(400).json({ error: 'Give their name (up to 120 characters).' })
+  const jobTitle = typeof body.jobTitle === 'string' ? body.jobTitle.replace(/\s+/g, ' ').trim() : ''
+  if (jobTitle.length > 80) return res.status(400).json({ error: 'Keep the role to 80 characters.' })
 
   try {
-    // The office manager, and only while active.
+    // An office admin, and only while active.
     const [{ data: settings }, { data: me }] = await Promise.all([
       db.from('office_settings').select('manager_id').eq('id', 1).maybeSingle(),
-      db.from('profiles').select('full_name, deactivated_at').eq('id', userId).maybeSingle(),
+      db.from('profiles').select('full_name, role, deactivated_at').eq('id', userId).maybeSingle(),
     ])
-    if (!settings?.manager_id || settings.manager_id !== userId || !me || me.deactivated_at) {
-      return res.status(403).json({ error: 'Only the office manager can invite people.' })
+    const isAdmin = (!!settings?.manager_id && settings.manager_id === userId) || me?.role === 'manager'
+    if (!me || me.deactivated_at || !isAdmin) {
+      return res.status(403).json({ error: 'Only Mr Tito or an office admin can invite people.' })
     }
 
     const { data: existing } = await db.from('profiles').select('id').eq('email', email).maybeSingle()
     if (existing) return res.status(409).json({ error: 'That email is already on the team.' })
 
-    const { error: invErr } = await db
+    // No job title given ("Send again"): the invite keeps the one it has.
+    const { data: inv, error: invErr } = await db
       .from('invites')
-      .upsert({ email, full_name: fullName, role: 'member', invited_by: userId }, { onConflict: 'email' })
+      .upsert(
+        { email, full_name: fullName, role: 'member', invited_by: userId, ...(jobTitle ? { job_title: jobTitle } : {}) },
+        { onConflict: 'email' },
+      )
+      .select('*')
+      .single()
     if (invErr) throw new Error(`invite row: ${invErr.message}`)
+    const title = (inv as { job_title?: string | null }).job_title ?? null
 
     const redirectTo = `${env.base}/set-password`
     let link: string | null = null
@@ -74,7 +87,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       if (!user) throw new Error(`generateLink invite: ${first.error.message}`)
       if (user.email_confirmed_at) {
         // Confirmed but with no profile (made by hand): make it now from the invite.
-        const { error: pErr } = await db.from('profiles').insert({ id: user.id, email, full_name: fullName, role: 'member' })
+        const { error: pErr } = await db
+          .from('profiles')
+          .insert({ id: user.id, email, full_name: fullName, role: 'member', ...(title ? { job_title: title } : {}) })
         if (pErr) throw new Error(`profile: ${pErr.message}`)
         await db.from('invites').delete().eq('email', email)
         const rec = await db.auth.admin.generateLink({ type: 'recovery', email, options: { redirectTo } })
