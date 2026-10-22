@@ -15,6 +15,8 @@ export interface Profile {
   deactivated_at: string | null
   /** 0007: their photo in the private avatars bucket, or null. */
   avatar_path?: string | null
+  /** 0016: what they do ("CEO", "Operations Manager"), shown as their role. A label only: no access. */
+  job_title?: string | null
   created_at: string
 }
 
@@ -23,6 +25,8 @@ export interface Invite {
   email: string
   full_name: string
   role: Role
+  /** 0016: the job title they join with. */
+  job_title?: string | null
   invited_by: string | null
   created_at: string
 }
@@ -149,7 +153,10 @@ export interface OfficeReport {
   work_date: string
   kind: ReportKind
   body: string | null
+  /** Before 0016: the one link. From 0016 new reports use `links`. */
   link: string | null
+  /** 0016: up to 5 links, or null. */
+  links?: string[] | null
   submitted_at: string
   timing: ReportTiming
 }
@@ -226,7 +233,10 @@ export interface OfficeTask {
   due_on: string | null
   status: TaskStatus
   done_note: string | null
+  /** Before 0016: the one link handed in. From 0016 a hand-in uses `done_links`. */
   done_link: string | null
+  /** 0016: up to 5 links handed in, or null. */
+  done_links?: string[] | null
   done_at: string | null
   closed_at: string | null
   closed_by: string | null

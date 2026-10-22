@@ -1,6 +1,6 @@
 import { useEffect, useId, useRef, useState, type FormEvent, type ReactNode, type RefObject } from 'react'
 import { useSearchParams } from 'react-router-dom'
-import { CalendarDays, ExternalLink, ImagePlus, ListChecks, Pencil, Plus, Star, X } from 'lucide-react'
+import { CalendarDays, ImagePlus, ListChecks, Pencil, Plus, Star, X } from 'lucide-react'
 import { Button, EmptyState, FieldError, Input, Label, Select, Skeleton, Textarea } from '@/components/ui/primitives'
 import { Modal } from '@/components/ui/Modal'
 import { Photo } from '@/components/ui/Photo'
@@ -25,6 +25,9 @@ import {
   useTasks,
 } from '@/hooks/useTasks'
 import { useAuthStore } from '@/stores/authStore'
+import { useHasColumn } from '@/hooks/useHasColumn'
+import { LinkList, LinksField } from '@/components/office/Links'
+import { linksOf, linksProblem } from '@/lib/links'
 import { useToastStore } from '@/stores/toastStore'
 import { localParts } from '@/lib/timezones'
 import { TOUCH } from '@/lib/touch'
@@ -805,7 +808,7 @@ const PROOF_TYPES_ACCEPT = ['image/png', 'image/jpeg', 'image/webp', 'image/gif'
 
 /* ------------------------------------------------------------ one task open */
 
-type Draft = { kind: 'done' | 'return' | 'cancel'; note: string; link: string; files: File[] } | null
+type Draft = { kind: 'done' | 'return' | 'cancel'; note: string; links: string[]; files: File[] } | null
 
 function TaskDetail({
   task,
@@ -826,6 +829,9 @@ function TaskDetail({
   // Proof images (0013): shown to everyone who can see the task; the picker only once 0013 is in.
   const { data: filesData } = useTaskFiles(task.id)
   const images = filesData?.rows ?? []
+  // Several links once 0016 is in; one box before.
+  const multiLinks = useHasColumn('office_tasks', 'done_links')
+  const handedLinks = linksOf(task.done_links, task.done_link)
   const start = useStartTask()
   const complete = useCompleteTask()
   const review = useReviewTask()
@@ -856,7 +862,7 @@ function TaskDetail({
   }
   const openDraft = (kind: NonNullable<Draft>['kind']) => {
     setError(null)
-    setDraft({ kind, note: '', link: '', files: [] })
+    setDraft({ kind, note: '', links: [''], files: [] })
   }
   const done = (message: string) => {
     setDraft(null)
@@ -924,7 +930,7 @@ function TaskDetail({
     if (!draft) return
     if (draft.kind === 'done') {
       complete.mutate(
-        { id: task.id, note: draft.note.trim(), link: draft.link.trim(), files: draft.files, personal },
+        { id: task.id, note: draft.note.trim(), links: draft.links, multi: multiLinks, files: draft.files, personal },
         { onSuccess: () => done(personal ? 'Done' : `Done. ${who(task.assigned_by)} will check it.`), onError: fail },
       )
     } else if (draft.kind === 'return') {
@@ -962,22 +968,12 @@ function TaskDetail({
 
         {task.details ? <p className="text-sm whitespace-pre-wrap text-text-primary">{task.details}</p> : null}
 
-        {(task.status === 'done' || task.status === 'approved') && (task.done_note || task.done_link || images.length > 0) ? (
+        {(task.status === 'done' || task.status === 'approved') && (task.done_note || handedLinks.length > 0 || images.length > 0) ? (
           <div className="rounded-[12px] bg-surface-sunken p-3 text-sm">
             <p className="text-[11px] font-medium tracking-[0.08em] text-text-secondary uppercase">Handed in</p>
             {task.done_note ? <p className="mt-1 whitespace-pre-wrap text-text-primary">{task.done_note}</p> : null}
-            {/* The database allows only http(s) links; checked again here, where it becomes an href. */}
-            {task.done_link && /^https?:\/\//i.test(task.done_link) ? (
-              <a
-                href={task.done_link}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="mt-1 inline-flex max-w-full items-center gap-1 font-semibold break-all text-brand underline-offset-2 hover:underline"
-              >
-                <ExternalLink size={13} strokeWidth={1.75} aria-hidden className="shrink-0" />
-                {task.done_link}
-              </a>
-            ) : null}
+            {/* The database allows only http(s) links; checked again where each becomes an href. */}
+            <LinkList links={handedLinks} />
             {images.length ? <ProofImages images={images} /> : null}
           </div>
         ) : null}
@@ -1048,19 +1044,13 @@ function TaskDetail({
                     placeholder="What you did, or where to find it"
                   />
                 </div>
-                <div>
-                  <Label htmlFor={`${id}-link`}>Link (optional)</Label>
-                  <Input
-                    id={`${id}-link`}
-                    type="url"
-                    inputMode="url"
-                    maxLength={2000}
-                    value={draft.link}
-                    onChange={(e) => setDraft({ ...draft, link: e.target.value })}
-                    placeholder="https://"
-                    className={TOUCH}
-                  />
-                </div>
+                <LinksField
+                  id={id}
+                  links={draft.links}
+                  onChange={(links) => setDraft({ ...draft, links })}
+                  multi={multiLinks}
+                  errorId={error && linksProblem(draft.links) ? `${id}-task-err` : undefined}
+                />
                 {/* Hidden only when 0013 is not applied; a failed read still offers it. */}
                 {filesData?.available !== false ? (
                   <ProofPicker files={draft.files} onChange={(files) => setDraft({ ...draft, files })} />
@@ -1079,7 +1069,9 @@ function TaskDetail({
                 />
               </div>
             )}
-            <FieldError>{error}</FieldError>
+            <div id={`${id}-task-err`}>
+              <FieldError>{error}</FieldError>
+            </div>
             <div className="flex flex-wrap justify-end gap-2">
               <Button
                 type="button"

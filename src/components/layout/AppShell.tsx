@@ -5,7 +5,7 @@ import { useToastStore } from '@/stores/toastStore'
 import { useThemeStore } from '@/stores/themeStore'
 import { useOfficeRole } from '@/hooks/useOffice'
 import { cn, initials } from '@/lib/utils'
-import { roleLabel } from '@/lib/constants'
+import { titleOf } from '@/lib/constants'
 import { SCROLLPORT_ID } from '@/lib/scrollport'
 import { Toast } from '@/components/ui/Toast'
 import { KnockLayer } from '@/components/office/KnockLayer'
@@ -26,13 +26,13 @@ import { needsMe } from '@/lib/tasks'
  */
 
 const NAV = [
-  { to: '/office', label: 'Office', icon: Building2, managerOnly: false },
-  { to: '/reports', label: 'Reports', icon: ClipboardCheck, managerOnly: false },
+  { to: '/office', label: 'Office', icon: Building2, adminOnly: false },
+  { to: '/reports', label: 'Reports', icon: ClipboardCheck, adminOnly: false },
   // Shown once 0011 is applied.
-  { to: '/tasks', label: 'Tasks', icon: ListChecks, managerOnly: false },
+  { to: '/tasks', label: 'Tasks', icon: ListChecks, adminOnly: false },
   // Shown once 0012 is applied.
-  { to: '/leaderboard', label: 'Leaderboard', icon: Trophy, managerOnly: false },
-  { to: '/settings', label: 'Settings', icon: Settings, managerOnly: true },
+  { to: '/leaderboard', label: 'Leaderboard', icon: Trophy, adminOnly: false },
+  { to: '/settings', label: 'Settings', icon: Settings, adminOnly: true },
 ]
 
 function Logo({ className }: { className?: string }) {
@@ -57,8 +57,10 @@ export function AppShell() {
   const { data: tasks } = useTasks()
   const { data: boardOn } = useLeaderboardAvailable()
 
+  // Settings: Mr Tito, and anyone labelled manager (Hazel), as AdminRoute.
+  const isAdmin = isManager || profile?.role === 'manager'
   const items = NAV.filter(
-    (n) => (!n.managerOnly || isManager) && (n.to !== '/tasks' || tasks?.available) && (n.to !== '/leaderboard' || boardOn),
+    (n) => (!n.adminOnly || isAdmin) && (n.to !== '/tasks' || tasks?.available) && (n.to !== '/leaderboard' || boardOn),
   )
   // Tasks waiting on you: given to you and not started, or done and waiting for your check.
   const waiting = profile && tasks?.available ? tasks.rows.filter((t) => needsMe(t, profile.id)).length : 0
@@ -83,7 +85,7 @@ export function AppShell() {
             {resolvedTheme === 'dark' ? <Sun size={18} strokeWidth={1.75} /> : <Moon size={18} strokeWidth={1.75} />}
           </button>
           <span
-            title={`${name} (${profile ? roleLabel(profile.role) : ''})`}
+            title={`${name} (${profile ? titleOf(profile) : ''})`}
             className="ml-1 hidden size-8 shrink-0 items-center justify-center rounded-full bg-brand text-[12px] font-bold text-surface sm:flex"
           >
             <span className="sr-only">Signed in as {name}</span>
@@ -130,7 +132,7 @@ export function AppShell() {
             </span>
             <div className="min-w-0 flex-1">
               <p className="truncate text-[13px] text-white">{name}</p>
-              <p className="truncate text-[11px] text-[var(--on-dark-faint)]">{profile ? roleLabel(profile.role) : ''}</p>
+              <p className="truncate text-[11px] text-[var(--on-dark-faint)]">{profile ? titleOf(profile) : ''}</p>
             </div>
             <button
               type="button"

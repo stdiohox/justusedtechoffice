@@ -1,8 +1,10 @@
 import { useState } from 'react'
-import { ExternalLink, FileText, Image as ImageIcon } from 'lucide-react'
+import { FileText, Image as ImageIcon } from 'lucide-react'
 import { openProof, type ReportWithFiles } from '@/hooks/useOffice'
 import { officeClock, type CheckpointState } from '@/lib/office'
 import { cn } from '@/lib/utils'
+import { linksOf } from '@/lib/links'
+import { LinkList } from '@/components/office/Links'
 
 const CHIP = 'inline-flex items-center rounded-[8px] px-2 py-[3px] text-[11px] font-medium whitespace-nowrap'
 
@@ -67,24 +69,13 @@ export function ProofList({ report }: { report: ReportWithFiles }) {
   )
 }
 
-/** What was filed: when, the words, the link, the proof. */
+/** What was filed: when, the words, the links, the proof. */
 export function ReportDetail({ report, zone }: { report: ReportWithFiles; zone: string }) {
   return (
     <div className="text-[13px]">
       <p className="tnum text-text-muted">Filed {officeClock(zone, report.submitted_at)}</p>
       {report.body ? <p className="mt-1 whitespace-pre-wrap text-text-primary">{report.body}</p> : null}
-      {report.link ? (
-        <a
-          href={report.link}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="mt-1 flex max-w-full items-center gap-1.5 text-brand hover:underline max-sm:min-h-11"
-        >
-          <ExternalLink size={13} strokeWidth={1.75} className="shrink-0" aria-hidden />
-          <span className="truncate">{report.link}</span>
-          <span className="sr-only"> (opens in a new tab)</span>
-        </a>
-      ) : null}
+      <LinkList links={linksOf(report.links, report.link)} />
       <ProofList report={report} />
     </div>
   )

@@ -4,7 +4,7 @@ import { BrowserRouter, Link, Navigate, Route, Routes } from 'react-router-dom'
 import { QueryClientProvider } from '@tanstack/react-query'
 import './index.css'
 import { AppShell } from '@/components/layout/AppShell'
-import { ManagerRoute, ProtectedRoute } from '@/components/layout/ProtectedRoute'
+import { AdminRoute, ProtectedRoute } from '@/components/layout/ProtectedRoute'
 import { Login } from '@/pages/Login'
 import { SetPassword } from '@/pages/SetPassword'
 import { useAuthStore } from '@/stores/authStore'
@@ -100,11 +100,11 @@ function App() {
         <Route
           path="/settings"
           element={
-            <ManagerRoute>
+            <AdminRoute>
               <Suspense fallback={<RouteFallback />}>
                 <Settings />
               </Suspense>
-            </ManagerRoute>
+            </AdminRoute>
           }
         />
         <Route path="*" element={<NotFound />} />

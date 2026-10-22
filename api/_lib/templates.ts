@@ -98,13 +98,13 @@ export interface OfficeReminderInput {
   what: string
   /** "14:00", office time */
   deadline: string
-  needsProof: boolean
+  takesProof: boolean
   reportsUrl: string
 }
 
 /** "Time for your midday report", to someone who has not filed it yet. */
 export function officeReminder(i: OfficeReminderInput): Email {
-  const proof = i.needsProof ? ' Attach a screenshot or file as proof of work.' : ''
+  const proof = i.takesProof ? ' Add a screenshot, a file or links as proof of work if you have them.' : ''
   return {
     subject: `Time for your ${i.what}`,
     html: shell(
@@ -123,7 +123,7 @@ export function officeReminder(i: OfficeReminderInput): Email {
 }
 
 /** "Your sign-in was due by 09:15", to the person who missed it. */
-export function officeMissedNudge(i: Omit<OfficeReminderInput, 'needsProof'>): Email {
+export function officeMissedNudge(i: Omit<OfficeReminderInput, 'takesProof'>): Email {
   return {
     subject: `Your ${i.what} has not been filed`,
     html: shell(

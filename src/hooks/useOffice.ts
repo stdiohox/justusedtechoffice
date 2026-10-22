@@ -6,6 +6,7 @@ import type { Stretch } from '@/lib/presence'
 import { useAuthStore } from '@/stores/authStore'
 import { useToastStore } from '@/stores/toastStore'
 import { REPORT_LABEL } from '@/lib/office'
+import { tidyLinks } from '@/lib/links'
 import type {
   Role,
   OfficeAbsence,
@@ -51,7 +52,7 @@ export function useOfficeSettings() {
 }
 
 export interface OfficeMemberWithUser extends OfficeMember {
-  user: { full_name: string; email: string; role: Role; deactivated_at: string | null } | null
+  user: { full_name: string; email: string; role: Role; deactivated_at: string | null; job_title?: string | null } | null
 }
 
 export function useOfficeMembers() {
@@ -60,7 +61,8 @@ export function useOfficeMembers() {
     queryFn: async (): Promise<OfficeMemberWithUser[]> => {
       const { data, error } = await supabase
         .from('office_members')
-        .select('user_id, active, added_at, user:profiles!office_members_user_id_fkey (full_name, email, role, deactivated_at)')
+        // The whole profile: its job title (0016) comes along once it exists, and nothing breaks before.
+        .select('user_id, active, added_at, user:profiles!office_members_user_id_fkey (*)')
       if (error) throw error
       return ((data ?? []) as unknown as OfficeMemberWithUser[]).sort((a, b) =>
         (a.user?.full_name ?? '').localeCompare(b.user?.full_name ?? ''),
@@ -148,7 +150,9 @@ export interface SubmitInput {
   /** The office's date as the browser sees it; the server re-derives its own. */
   date: string
   body: string
-  link: string
+  links: string[]
+  /** 0016 applied: send the list. Before it, the first link alone. */
+  multi: boolean
   files: File[]
 }
 
@@ -158,7 +162,7 @@ export function useSubmitReport() {
   const showToast = useToastStore((s) => s.showToast)
 
   return useMutation({
-    mutationFn: async ({ kind, date, body, link, files }: SubmitInput) => {
+    mutationFn: async ({ kind, date, body, links, multi, files }: SubmitInput) => {
       if (!userId) throw new Error('Sign in again and retry.')
       const uploaded: { path: string; name: string; sha256: string }[] = []
       // One at a time: on a slow connection, five parallel 10 MB uploads all
@@ -175,8 +179,8 @@ export function useSubmitReport() {
       const { error } = await supabase.rpc('submit_report', {
         p_kind: kind,
         p_body: body.trim(),
-        p_link: link.trim(),
         p_files: uploaded,
+        ...(multi ? { p_link: null, p_links: tidyLinks(links) } : { p_link: tidyLinks(links)[0] ?? '' }),
       })
       if (error) throw new Error(error.message)
     },
