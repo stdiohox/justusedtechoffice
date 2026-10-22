@@ -211,11 +211,32 @@ function useTaskRpc<T>(
   })
 }
 
-export const useCreateTask = () =>
-  useTaskRpc(
+/** A task for someone else is emailed to them; one for yourself (0015) is not. */
+export const useCreateTask = () => {
+  const userId = useAuthStore((s) => s.profile?.id)
+  return useTaskRpc(
     (i: { to: string; title: string; details: string; dueOn: string }) =>
       supabase.rpc('create_task', { p_to: i.to, p_title: i.title, p_details: i.details || null, p_due: i.dueOn || null }),
-    () => true,
+    (i) => i.to !== userId,
+  )
+}
+
+/**
+ * Fix a task (0015): the whole new title, details and due date, and who it is
+ * for when that changes. The assignee is emailed (the route holds it to one
+ * edit email per task every 30 minutes); a personal task emails nobody.
+ */
+export const useEditTask = () =>
+  useTaskRpc(
+    (i: { id: string; title: string; details: string; dueOn: string; to: string | null; personal: boolean }) =>
+      supabase.rpc('edit_task', {
+        p_id: i.id,
+        p_title: i.title,
+        p_details: i.details || null,
+        p_due: i.dueOn || null,
+        p_to: i.to,
+      }),
+    (i) => !i.personal,
   )
 
 export const useStartTask = () => useTaskRpc((id: string) => supabase.rpc('start_task', { p_id: id }), () => false)
@@ -231,7 +252,7 @@ export const useCompleteTask = () => {
   // hand-in) reuses them instead of uploading the same image again.
   const uploadedRef = useRef(new WeakMap<File, string>())
   return useTaskRpc(
-    async (i: { id: string; note: string; link: string; files: File[] }) => {
+    async (i: { id: string; note: string; link: string; files: File[]; personal: boolean }) => {
       if (!i.files.length) {
         return supabase.rpc('complete_task', { p_id: i.id, p_note: i.note || null, p_link: i.link || null })
       }
@@ -256,7 +277,8 @@ export const useCompleteTask = () => {
       }
       return supabase.rpc('complete_task', { p_id: i.id, p_note: i.note || null, p_link: i.link || null, p_files: uploaded })
     },
-    () => true,
+    // A personal task (0015) is closed by being done: nobody to tell.
+    (i) => !i.personal,
   )
 }
 

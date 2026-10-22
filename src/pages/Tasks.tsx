@@ -1,11 +1,12 @@
 import { useEffect, useId, useRef, useState, type FormEvent, type ReactNode, type RefObject } from 'react'
 import { useSearchParams } from 'react-router-dom'
-import { CalendarDays, ExternalLink, ImagePlus, ListChecks, Plus, Star, X } from 'lucide-react'
+import { CalendarDays, ExternalLink, ImagePlus, ListChecks, Pencil, Plus, Star, X } from 'lucide-react'
 import { Button, EmptyState, FieldError, Input, Label, Select, Skeleton, Textarea } from '@/components/ui/primitives'
 import { Modal } from '@/components/ui/Modal'
 import { Photo } from '@/components/ui/Photo'
 import { useTeam } from '@/hooks/useTeam'
 import { useOfficeSettings } from '@/hooks/useOffice'
+import { useNow } from '@/hooks/useNow'
 import {
   useCancelTask,
   useRateTask,
@@ -16,6 +17,7 @@ import {
   type TaskImage,
   useCompleteTask,
   useCreateTask,
+  useEditTask,
   useIsTaskAdmin,
   useReviewTask,
   useStartTask,
@@ -29,28 +31,33 @@ import { TOUCH } from '@/lib/touch'
 import { absoluteTime, cn, initials, relativeTime } from '@/lib/utils'
 import {
   EVENT_LABEL,
-  STATUS_LABEL,
   canCancel,
+  canEdit,
   canRate,
   canReview,
   dueLabel,
   isClosed,
   isOverdue,
+  isPersonal,
   needsMe,
   sortTasks,
+  statusLabel,
 } from '@/lib/tasks'
-import type { OfficeTask, TaskStatus } from '@/types/database'
+import type { OfficeTask, OfficeTaskEvent, TaskStatus } from '@/types/database'
 
 /**
  * Tasks (0011). Anyone on the team gives anyone else a task; the assignee
  * starts it and marks it done; the person who gave it (or an admin: Mr Tito,
- * Hazel) checks it and approves it or sends it back. What each person may
- * see and do is decided by RLS and the 0011 functions; this screen only
+ * Hazel) checks it and approves it or sends it back. Anyone can also give
+ * themselves a personal task (0015): no check, no stars, no points. The giver
+ * (or an admin) can edit a task until it is handed in. What each person may
+ * see and do is decided by RLS and the 0011/0015 functions; this screen only
  * offers what they would allow.
  */
 
-type Tab = 'mine' | 'given' | 'all'
-const TAB_WIDTH = 92
+type Tab = 'mine' | 'personal' | 'given' | 'all'
+/** Four tabs fit a 390px phone at 84px each; three keep the wider 92px. */
+const tabWidth = (n: number) => (n > 3 ? 84 : 92)
 
 const CHIP = 'inline-flex items-center rounded-[8px] px-2 py-[3px] text-[11px] font-medium whitespace-nowrap'
 
@@ -63,8 +70,8 @@ const STATUS_TONE: Record<TaskStatus, string> = {
   cancelled: 'bg-surface-sunken text-text-muted',
 }
 
-function StatusChip({ status }: { status: TaskStatus }) {
-  return <span className={cn(CHIP, STATUS_TONE[status])}>{STATUS_LABEL[status]}</span>
+function StatusChip({ task }: { task: OfficeTask }) {
+  return <span className={cn(CHIP, STATUS_TONE[task.status])}>{statusLabel(task)}</span>
 }
 
 function DueChip({ task, today }: { task: OfficeTask; today: string }) {
@@ -288,6 +295,7 @@ function TaskRow({
   onOpen: () => void
 }) {
   const mine = needsMe(task, userId)
+  const personal = isPersonal(task)
   return (
     <li>
       <button
@@ -303,16 +311,26 @@ function TaskRow({
       >
         <span className="flex flex-wrap items-start gap-2">
           <span className="mr-auto min-w-0 flex-1 basis-[200px] text-[15px] font-medium break-words text-text-primary">{task.title}</span>
-          <StatusChip status={task.status} />
+          <StatusChip task={task} />
         </span>
         <span className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1.5 text-[12px] text-text-secondary">
-          {tab !== 'given' ? (
+          {personal ? (
+            // Personal (0015): one person, no From and To. On the Personal tab it is always you.
+            tab === 'personal' ? null : (
+              <span className="inline-flex items-center gap-1.5">
+                <Person id={task.assigned_to} name={task.assigned_to === userId ? 'You' : nameOf(task.assigned_to)} />
+                <span className={cn(CHIP, 'bg-surface-sunken text-text-secondary')}>
+                  <span className="sr-only">, a </span>Personal<span className="sr-only"> task</span>
+                </span>
+              </span>
+            )
+          ) : tab !== 'given' ? (
             <span className="inline-flex items-center gap-1.5">
               <span className="text-text-muted">From</span>
               <Person id={task.assigned_by} name={task.assigned_by === userId ? 'You' : nameOf(task.assigned_by)} />
             </span>
           ) : null}
-          {tab !== 'mine' ? (
+          {!personal && tab !== 'mine' ? (
             <span className="inline-flex items-center gap-1.5">
               <span className="text-text-muted">To</span>
               <Person id={task.assigned_to} name={task.assigned_to === userId ? 'You' : nameOf(task.assigned_to)} />
@@ -334,12 +352,24 @@ function TaskRow({
 
 /* --------------------------------------------------------------- new task */
 
-function NewTask({ open, onOpenChange, today }: { open: boolean; onOpenChange: (o: boolean) => void; today: string }) {
-  const userId = useAuthStore((s) => s.profile?.id)
+function NewTask({
+  open,
+  onOpenChange,
+  today,
+  forMe,
+}: {
+  open: boolean
+  onOpenChange: (o: boolean) => void
+  today: string
+  /** Opened from the Personal tab: "Myself" is chosen to start with. */
+  forMe: boolean
+}) {
+  const userId = useAuthStore((s) => s.profile?.id) ?? ''
   const { data: team } = useTeam()
   const create = useCreateTask()
   const showToast = useToastStore((s) => s.showToast)
-  const [to, setTo] = useState('')
+  // Null until a choice is made, so the opening default follows the tab.
+  const [chosen, setChosen] = useState<string | null>(null)
   const [title, setTitle] = useState('')
   const [details, setDetails] = useState('')
   const [dueOn, setDueOn] = useState('')
@@ -348,9 +378,11 @@ function NewTask({ open, onOpenChange, today }: { open: boolean; onOpenChange: (
   const toRef = useRef<HTMLSelectElement>(null)
   const titleRef = useRef<HTMLInputElement>(null)
   const people = (team ?? []).filter((p) => !p.deactivated_at && p.id !== userId)
+  const to = chosen ?? (forMe ? userId : '')
+  const personal = !!to && to === userId
 
   const reset = () => {
-    setTo('')
+    setChosen(null)
     setTitle('')
     setDetails('')
     setDueOn('')
@@ -374,7 +406,7 @@ function NewTask({ open, onOpenChange, today }: { open: boolean; onOpenChange: (
       {
         onSuccess: () => {
           const name = people.find((p) => p.id === to)?.full_name ?? 'them'
-          showToast(`Task given to ${name}`, 'success')
+          showToast(personal ? 'Added to your personal tasks' : `Task given to ${name}`, 'success')
           onOpenChange(false)
           reset()
         },
@@ -393,8 +425,12 @@ function NewTask({ open, onOpenChange, today }: { open: boolean; onOpenChange: (
         onOpenChange(o)
         if (!o) reset()
       }}
-      title="Give a task"
-      description="They are told in the office and by email. When they mark it done, you check it."
+      title={personal ? 'Add a personal task' : 'Give a task'}
+      description={
+        personal
+          ? 'Your own work, to keep on your list and track. Only you and the admins see it. Done closes it: no check, no stars, no points.'
+          : 'They are told in the office and by email. When they mark it done, you check it.'
+      }
     >
       <form id={`${id}-form`} onSubmit={submit} className="space-y-4" noValidate>
         <div>
@@ -405,10 +441,11 @@ function NewTask({ open, onOpenChange, today }: { open: boolean; onOpenChange: (
             value={to}
             aria-required
             {...invalid('to')}
-            onChange={(e) => setTo(e.target.value)}
+            onChange={(e) => setChosen(e.target.value)}
             className={cn(TOUCH, error?.field === 'to' && 'border-state-danger')}
           >
-            <option value="">Choose a teammate</option>
+            <option value="">Choose who it is for</option>
+            {userId ? <option value={userId}>Myself (a personal task)</option> : null}
             {people.map((p) => (
               <option key={p.id} value={p.id}>
                 {p.full_name}
@@ -427,7 +464,7 @@ function NewTask({ open, onOpenChange, today }: { open: boolean; onOpenChange: (
             value={title}
             maxLength={200}
             onChange={(e) => setTitle(e.target.value)}
-            placeholder="Photograph the new laptops"
+            placeholder={personal ? 'Update my trade-in price notes' : 'Photograph the new laptops'}
             className={TOUCH}
           />
         </div>
@@ -455,12 +492,172 @@ function NewTask({ open, onOpenChange, today }: { open: boolean; onOpenChange: (
             Cancel
           </Button>
           <Button type="submit" loading={create.isPending} className={TOUCH}>
-            Give task
+            {personal ? 'Add task' : 'Give task'}
           </Button>
         </div>
       </form>
     </Modal>
   )
+}
+
+/* -------------------------------------------------------------- editing (0015) */
+
+/**
+ * Fixing a task while it is To do or In progress: title, details, due date,
+ * and (not for a personal task) who it is for. The person it was given to is
+ * told; moving it starts it again as To do for the new person.
+ */
+function EditTask({
+  task,
+  today,
+  onSaved,
+  onBack,
+}: {
+  task: OfficeTask
+  today: string
+  onSaved: (message: string) => void
+  onBack: () => void
+}) {
+  const { data: team } = useTeam()
+  const edit = useEditTask()
+  const personal = isPersonal(task)
+  // The task as it was when the form opened: edit_task takes whole values, so
+  // a change made meanwhile (realtime) must be seen before it is overwritten.
+  const [base, setBase] = useState(task)
+  const [title, setTitle] = useState(task.title)
+  const [details, setDetails] = useState(task.details ?? '')
+  const [dueOn, setDueOn] = useState(task.due_on ?? '')
+  // Null until the person is changed here: a move made meanwhile is never undone by saving.
+  const [to, setTo] = useState<string | null>(null)
+  const [error, setError] = useState<{ text: string; field: 'title' | 'due' | null } | null>(null)
+  const id = useId()
+  const titleRef = useRef<HTMLInputElement>(null)
+  const dueRef = useRef<HTMLInputElement>(null)
+  const stale = task.updated_at !== base.updated_at
+  const current = to ?? task.assigned_to
+  // Anyone active but the person who gave it; whoever has it now stays listed even if they have left.
+  const people = (team ?? []).filter((p) => p.id !== task.assigned_by && (!p.deactivated_at || p.id === task.assigned_to))
+  const moving = current !== task.assigned_to
+  const nameOf = (pid: string) => team?.find((p) => p.id === pid)?.full_name ?? 'them'
+  // A due date already past may stay as it is; a new one starts from today.
+  const minDue = task.due_on && task.due_on < today ? task.due_on : today
+
+  const useLatest = () => {
+    setBase(task)
+    setTitle(task.title)
+    setDetails(task.details ?? '')
+    setDueOn(task.due_on ?? '')
+    setTo(null)
+    setError(null)
+    requestAnimationFrame(() => titleRef.current?.focus())
+  }
+
+  const submit = (e: FormEvent) => {
+    e.preventDefault()
+    if (stale) return
+    if (!title.trim()) {
+      setError({ text: 'Give the task a title.', field: 'title' })
+      return titleRef.current?.focus()
+    }
+    if (dueOn && dueOn !== (task.due_on ?? '') && dueOn < today) {
+      setError({ text: 'The due date has already passed.', field: 'due' })
+      return dueRef.current?.focus()
+    }
+    setError(null)
+    edit.mutate(
+      { id: task.id, title: title.trim(), details: details.trim(), dueOn, to: moving ? current : null, personal },
+      {
+        onSuccess: (data) =>
+          onSaved(!data ? 'Nothing changed' : moving ? `Moved to ${nameOf(current)}. They are told.` : personal ? 'Task updated' : `Task updated. ${nameOf(task.assigned_to)} is told.`),
+        onError: (err) => setError({ text: err.message, field: null }),
+      },
+    )
+  }
+  const errorId = `${id}-error`
+  const invalid = (field: 'title' | 'due') =>
+    error?.field === field ? { 'aria-invalid': true as const, 'aria-describedby': errorId } : {}
+
+  return (
+    <form onSubmit={submit} aria-label="Edit this task" className="hairline-t space-y-3 pt-4" noValidate>
+      {stale ? (
+        <div role="alert" className="rounded-[8px] bg-tint-warning p-3 text-[13px] text-text-primary">
+          This task changed while you were editing it.{' '}
+          <button type="button" onClick={useLatest} className={cn('font-semibold text-brand underline underline-offset-2', TOUCH)}>
+            Start again from the latest
+          </button>
+        </div>
+      ) : null}
+      <div>
+        <Label htmlFor={`${id}-title`}>Task</Label>
+        <Input
+          ref={titleRef}
+          id={`${id}-title`}
+          autoFocus
+          aria-required
+          invalid={error?.field === 'title'}
+          {...invalid('title')}
+          value={title}
+          maxLength={200}
+          onChange={(e) => setTitle(e.target.value)}
+          className={TOUCH}
+        />
+      </div>
+      <div>
+        <Label htmlFor={`${id}-details`}>Details (optional)</Label>
+        <Textarea id={`${id}-details`} value={details} maxLength={4000} rows={3} onChange={(e) => setDetails(e.target.value)} />
+      </div>
+      <div className="flex flex-wrap gap-3">
+        <div>
+          <Label htmlFor={`${id}-due`}>Due (optional)</Label>
+          <Input
+            ref={dueRef}
+            id={`${id}-due`}
+            type="date"
+            value={dueOn}
+            min={minDue}
+            invalid={error?.field === 'due'}
+            {...invalid('due')}
+            onChange={(e) => setDueOn(e.target.value)}
+            className={cn('w-[180px]', TOUCH)}
+          />
+        </div>
+        {!personal ? (
+          <div className="min-w-[200px] flex-1">
+            <Label htmlFor={`${id}-to`}>For</Label>
+            <Select id={`${id}-to`} value={current} aria-describedby={`${id}-moving`} onChange={(e) => setTo(e.target.value)} className={TOUCH}>
+              {people.map((p) => (
+                <option key={p.id} value={p.id}>
+                  {p.full_name}
+                </option>
+              ))}
+            </Select>
+            {/* Always there, so the change is said as it happens, not only on focus. */}
+            <p id={`${id}-moving`} role="status" className="mt-1 text-[12px] text-text-muted">
+              {moving ? `${nameOf(current)} gets it as a new task, To do. ${nameOf(task.assigned_to)} no longer sees it.` : ''}
+            </p>
+          </div>
+        ) : null}
+      </div>
+      <div id={errorId}>
+        <FieldError>{error?.text}</FieldError>
+      </div>
+      <div className="flex flex-wrap justify-end gap-2">
+        <Button type="button" variant="ghost" className={TOUCH} disabled={edit.isPending} onClick={onBack}>
+          Back
+        </Button>
+        <Button type="submit" loading={edit.isPending} disabled={stale} className={TOUCH}>
+          Save changes
+        </Button>
+      </div>
+    </form>
+  )
+}
+
+/** One step in a task's history, as read: a move (0015) reads "passed it on", a personal task's start "added it". */
+function stepLabel(ev: OfficeTaskEvent, task: OfficeTask) {
+  if (ev.kind === 'assigned' && isPersonal(task)) return 'added it'
+  if (ev.kind === 'assigned' && ev.note) return 'passed it on'
+  return EVENT_LABEL[ev.kind]
 }
 
 /* ----------------------------------------------------------- proof images (0013) */
@@ -635,6 +832,7 @@ function TaskDetail({
   const cancel = useCancelTask()
   const showToast = useToastStore((s) => s.showToast)
   const [draft, setDraft] = useState<Draft>(null)
+  const [editing, setEditing] = useState(false)
   const [error, setError] = useState<string | null>(null)
   // Said inside the dialog: the toast lives outside it, where a screen reader
   // is told not to look while the dialog is open.
@@ -643,9 +841,11 @@ function TaskDetail({
   // form closed): the task's status, so the keyboard keeps its place.
   const statusRef = useRef<HTMLDivElement>(null)
   const refocus = () => requestAnimationFrame(() => statusRef.current?.focus())
+  const editRef = useRef<HTMLButtonElement>(null)
   const id = useId()
 
   const assignee = task.assigned_to === userId
+  const personal = isPersonal(task)
   // When the dialog opened: canRate's 7-day window is judged against it, so a render stays pure.
   const [openedAt] = useState(() => Date.now())
   const busy = start.isPending || complete.isPending || review.isPending || cancel.isPending
@@ -660,21 +860,42 @@ function TaskDetail({
   }
   const done = (message: string) => {
     setDraft(null)
+    setEditing(false)
     setError(null)
-    setAnnounce(message)
+    // Cleared first: the same words twice (two saves) must still be said.
+    setAnnounce('')
+    requestAnimationFrame(() => setAnnounce(message))
     showToast(message, 'success')
     refocus()
   }
 
   const actions: ReactNode[] = []
-  if (assignee && task.status === 'open' && !draft) {
+  if (canEdit(task, userId, admin) && !draft && !editing) {
+    actions.push(
+      <Button
+        key="edit"
+        ref={editRef}
+        variant="secondary"
+        icon={<Pencil size={14} strokeWidth={1.75} aria-hidden />}
+        disabled={busy}
+        className={TOUCH}
+        onClick={() => {
+          setError(null)
+          setEditing(true)
+        }}
+      >
+        Edit
+      </Button>,
+    )
+  }
+  if (assignee && task.status === 'open' && !draft && !editing) {
     actions.push(
       <Button key="start" variant="secondary" loading={start.isPending} disabled={busy} className={TOUCH} onClick={() => start.mutate(task.id, { onSuccess: () => done('Started'), onError: fail })}>
         Start
       </Button>,
     )
   }
-  if (assignee && (task.status === 'open' || task.status === 'in_progress') && !draft) {
+  if (assignee && (task.status === 'open' || task.status === 'in_progress') && !draft && !editing) {
     actions.push(
       <Button key="done" disabled={busy} className={TOUCH} onClick={() => openDraft('done')}>
         Mark done
@@ -703,8 +924,8 @@ function TaskDetail({
     if (!draft) return
     if (draft.kind === 'done') {
       complete.mutate(
-        { id: task.id, note: draft.note.trim(), link: draft.link.trim(), files: draft.files },
-        { onSuccess: () => done(`Done. ${who(task.assigned_by)} will check it.`), onError: fail },
+        { id: task.id, note: draft.note.trim(), link: draft.link.trim(), files: draft.files, personal },
+        { onSuccess: () => done(personal ? 'Done' : `Done. ${who(task.assigned_by)} will check it.`), onError: fail },
       )
     } else if (draft.kind === 'return') {
       if (!draft.note.trim()) return setError('Say what still needs doing.')
@@ -722,14 +943,20 @@ function TaskDetail({
       onOpenChange={(o) => !o && !complete.isPending && onClose()}
       onCloseAutoFocus={onCloseAutoFocus}
       title={task.title}
-      description={`${who(task.assigned_by)} gave this to ${who(task.assigned_to).replace(/^You$/, 'you')}`}
+      description={
+        personal
+          ? assignee
+            ? 'Your personal task. Only you and the admins see it.'
+            : `${who(task.assigned_to)}'s personal task`
+          : `${who(task.assigned_by)} gave this to ${who(task.assigned_to).replace(/^You$/, 'you')}`
+      }
     >
       <div className="space-y-4">
         <p role="status" className="sr-only">
           {announce}
         </p>
-        <div ref={statusRef} tabIndex={-1} aria-label={`Status: ${STATUS_LABEL[task.status]}`} className="flex flex-wrap items-center gap-2 rounded-[8px]">
-          <StatusChip status={task.status} />
+        <div ref={statusRef} tabIndex={-1} role="group" aria-label={`Status: ${statusLabel(task)}`} className="flex flex-wrap items-center gap-2 rounded-[8px]">
+          <StatusChip task={task} />
           <DueChip task={task} today={today} />
         </div>
 
@@ -769,19 +996,38 @@ function TaskDetail({
             <ol className="mt-2 space-y-2">
               {(events ?? []).map((ev) => (
                 <li key={ev.id} className="text-[13px] text-text-secondary">
-                  <span className="font-medium text-text-primary">{who(ev.actor)}</span> {EVENT_LABEL[ev.kind]}
+                  <span className="font-medium text-text-primary">{who(ev.actor)}</span> {stepLabel(ev, task)}
                   <span className="text-text-muted" title={absoluteTime(ev.created_at)}>
                     {' '}
                     · {relativeTime(ev.created_at)}
                   </span>
-                  {ev.note ? <span className="mt-0.5 block whitespace-pre-wrap text-text-primary">“{ev.note}”</span> : null}
+                  {/* An edit or a move (0015) says what changed: the system's words, not a quote. */}
+                  {ev.note ? (
+                    ev.kind === 'edited' || ev.kind === 'assigned' ? (
+                      <span className="mt-0.5 block whitespace-pre-wrap text-text-secondary">{ev.note}</span>
+                    ) : (
+                      <span className="mt-0.5 block whitespace-pre-wrap text-text-primary">“{ev.note}”</span>
+                    )
+                  ) : null}
                 </li>
               ))}
             </ol>
           )}
         </section>
 
-        {draft ? (
+        {editing ? (
+          <EditTask
+            task={task}
+            today={today}
+            onSaved={done}
+            onBack={() => {
+              setEditing(false)
+              setError(null)
+              // Back to the button that opened the form.
+              requestAnimationFrame(() => editRef.current?.focus())
+            }}
+          />
+        ) : draft ? (
           <form
             onSubmit={submitDraft}
             aria-label={draft.kind === 'done' ? 'Mark this task done' : draft.kind === 'return' ? 'Send this task back' : 'Cancel this task'}
@@ -882,6 +1128,7 @@ function TaskDetail({
 
 function Tabs({ tabs, tab, onTab }: { tabs: { id: Tab; label: string }[]; tab: Tab; onTab: (t: Tab) => void }) {
   const i = tabs.findIndex((t) => t.id === tab)
+  const width = tabWidth(tabs.length)
   return (
     <div
       role="tablist"
@@ -904,7 +1151,7 @@ function Tabs({ tabs, tab, onTab }: { tabs: { id: Tab; label: string }[]; tab: T
       <span
         aria-hidden
         className="seg-thumb absolute top-[3px] bottom-[3px] left-[3px] rounded-[10px] bg-surface-raised shadow-[var(--shadow-sm)]"
-        style={{ width: TAB_WIDTH, transform: `translateX(${i * TAB_WIDTH}px)` }}
+        style={{ width, transform: `translateX(${i * width}px)` }}
       />
       {tabs.map((t) => (
         <button
@@ -916,7 +1163,7 @@ function Tabs({ tabs, tab, onTab }: { tabs: { id: Tab; label: string }[]; tab: T
           aria-controls="tasks-panel"
           tabIndex={tab === t.id ? 0 : -1}
           onClick={() => onTab(t.id)}
-          style={{ width: TAB_WIDTH }}
+          style={{ width }}
           className={cn(
             'relative rounded-[10px] text-[13px] font-medium transition-colors duration-150',
             tab === t.id ? 'font-semibold text-text-primary' : 'text-text-muted hover:text-text-primary',
@@ -949,6 +1196,8 @@ export function Tasks() {
   const [tab, setTab] = useState<Tab>('mine')
   const [showClosed, setShowClosed] = useState(false)
   const [creating, setCreating] = useState(false)
+  // For the Personal tab's "last 7 days": a clock, so a tab left open does not go stale.
+  const loadedAt = useNow(10 * 60_000).getTime()
   const giveRef = useRef<HTMLButtonElement>(null)
   // ?task=<id> opens one task: the pop-ups link here.
   const [params, setParams] = useSearchParams()
@@ -986,13 +1235,26 @@ export function Tasks() {
 
   const tabs: { id: Tab; label: string }[] = [
     { id: 'mine', label: 'For me' },
+    { id: 'personal', label: 'Personal' },
     { id: 'given', label: 'I gave' },
     ...(admin ? [{ id: 'all' as const, label: 'Everyone' }] : []),
   ]
   const current = tabs.some((t) => t.id === tab) ? tab : 'mine'
+  // Personal tasks (0015) have their own tab: For me and I gave hold tasks between two people.
   const inTab = data.rows.filter((t) =>
-    current === 'mine' ? t.assigned_to === userId : current === 'given' ? t.assigned_by === userId : true,
+    current === 'mine' ? t.assigned_to === userId && !isPersonal(t)
+    : current === 'personal' ? t.assigned_to === userId && isPersonal(t)
+    : current === 'given' ? t.assigned_by === userId && !isPersonal(t)
+    : true,
   )
+  const progress =
+    current === 'personal'
+      ? {
+          todo: inTab.filter((t) => t.status === 'open').length,
+          doing: inTab.filter((t) => t.status === 'in_progress').length,
+          done: inTab.filter((t) => t.status === 'approved' && !!t.closed_at && Date.parse(t.closed_at) > loadedAt - 7 * 86_400_000).length,
+        }
+      : null
   const live = sortTasks(inTab.filter((t) => !isClosed(t)), userId)
   const closed = sortTasks(inTab.filter(isClosed), userId)
   const waitingOnMe = data.rows.filter((t) => needsMe(t, userId)).length
@@ -1010,6 +1272,8 @@ export function Tasks() {
   const empty =
     current === 'mine'
       ? { title: 'Nothing on your list', body: 'When a teammate gives you a task, it shows here.' }
+      : current === 'personal'
+        ? { title: 'No personal tasks', body: 'Add a task for yourself to keep your own work on the list and see it through.' }
       : current === 'given'
         ? { title: 'You have not given any tasks', body: 'Give a teammate a task, and check it here when they are done.' }
         : { title: 'No tasks yet', body: 'Tasks anyone gives anyone show here.' }
@@ -1025,11 +1289,18 @@ export function Tasks() {
         </div>
         <Tabs tabs={tabs} tab={current} onTab={setTab} />
         <Button ref={giveRef} icon={<Plus size={16} strokeWidth={2} aria-hidden />} className={TOUCH} onClick={() => setCreating(true)}>
-          Give a task
+          {current === 'personal' ? 'Add a task' : 'Give a task'}
         </Button>
       </div>
 
       <div id="tasks-panel" role="tabpanel" tabIndex={0} aria-labelledby={`tasks-tab-${current}`} className="mx-auto max-w-[820px] p-4 sm:p-6">
+        {progress && (progress.todo || progress.doing || progress.done) ? (
+          <p className="mb-4 text-[13px] text-text-secondary">
+            <span className="font-semibold text-text-primary">{progress.todo}</span> to do ·{' '}
+            <span className="font-semibold text-text-primary">{progress.doing}</span> in progress ·{' '}
+            <span className="font-semibold text-text-primary">{progress.done}</span> done in the last 7 days
+          </p>
+        ) : null}
         {live.length ? (
           <ul className="space-y-3">
             {live.map((t) => (
@@ -1048,7 +1319,7 @@ export function Tasks() {
               onClick={() => setShowClosed((s) => !s)}
               className={cn('text-[13px] font-medium text-text-secondary hover:text-text-primary', TOUCH)}
             >
-              {showClosed ? 'Hide' : 'Show'} approved and cancelled ({closed.length})
+              {showClosed ? 'Hide' : 'Show'} {current === 'personal' ? 'done' : 'approved'} and cancelled ({closed.length})
             </button>
             {showClosed ? (
               <ul className="mt-3 space-y-3">
@@ -1061,7 +1332,7 @@ export function Tasks() {
         ) : null}
       </div>
 
-      <NewTask open={creating} onOpenChange={setCreating} today={today} />
+      <NewTask open={creating} onOpenChange={setCreating} today={today} forMe={current === 'personal'} />
       {opened ? (
         <TaskDetail
           key={opened.id}

@@ -12,7 +12,7 @@ project and shares no data with Tito Finance. Registered in Koret Tech's `client
 - **Migrations are applied by hand** in the Supabase SQL editor; nothing here holds database
   credentials. Every migration is one transaction with a self-check, has a rollback in
   `supabase/rollbacks/`, and is verified on a PGlite replay of the whole chain before it is
-  committed. Number new ones from the next free number (0015 after 0014_day_times_and_early_start).
+  committed. Number new ones from the next free number (0016 after 0015_personal_and_editable_tasks).
 - **The screens degrade**: a feature that needs a migration stays hidden (or falls back) until it
   is applied, so the frontend can ship first.
 - `npm run build` must pass (it typechecks the app and `api/`, and loads every API route under
