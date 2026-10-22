@@ -213,7 +213,7 @@ export interface OfficeRosterDay {
 /* ------------------------------------------------------------ tasks (0011) */
 
 export type TaskStatus = 'open' | 'in_progress' | 'done' | 'approved' | 'cancelled'
-export type TaskEventKind = 'assigned' | 'started' | 'done' | 'approved' | 'returned' | 'cancelled' | 'rated'
+export type TaskEventKind = 'assigned' | 'started' | 'done' | 'approved' | 'returned' | 'cancelled' | 'rated' | 'edited'
 
 /** office_tasks: one task one person gave another. Changed only through the 0011 functions. */
 export interface OfficeTask {

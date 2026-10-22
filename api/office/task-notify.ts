@@ -5,9 +5,10 @@ import { officeTask, type TaskEmailKind } from '../_lib/templates.js'
 
 /**
  * A task step by email (0011): a new task to the assignee, "done, please
- * check" to the giver, "sent back" to the assignee, and (0012) the stars a
- * task was given, to the assignee. Called by the actor's
- * browser right after the step.
+ * check" to the giver, "sent back" to the assignee, (0012) the stars a
+ * task was given, to the assignee, and (0015) an edit, to the assignee.
+ * Called by the actor's browser right after the step. A personal task (0015)
+ * emails nobody: its only person is the actor.
  *
  * The body names one event and nothing else. The update below is the whole
  * authorisation: it only matches an event of an emailing kind, made by the
@@ -18,7 +19,7 @@ import { officeTask, type TaskEmailKind } from '../_lib/templates.js'
  * The link comes from OFFICE_BASE_URL, never from the Host header.
  */
 
-const EMAILING: TaskEmailKind[] = ['assigned', 'done', 'returned', 'rated']
+const EMAILING: TaskEmailKind[] = ['assigned', 'done', 'returned', 'rated', 'edited']
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' })
@@ -111,6 +112,30 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     return res.status(200).json({ sent: false })
   }
 
+  // 'edited' (0015): fixing a typo three times is one piece of news. At most
+  // one edit email per task every 30 minutes, counted from edit emails really
+  // sent: a held-back one lets its latch go, so it neither stretches the
+  // window nor uses up the hourly cap above. (The browser sends each step
+  // once, so a released latch is not sent later.)
+  if (event.kind === 'edited') {
+    const { count: recent, error: recentErr } = await db
+      .from('office_task_events')
+      .select('id', { count: 'exact', head: true })
+      .eq('task_id', event.task_id)
+      .eq('kind', 'edited')
+      .neq('id', eventId)
+      .gt('emailed_at', new Date(now.getTime() - 1_800_000).toISOString())
+    if (recentErr) {
+      console.error('task-notify edit throttle:', recentErr.message)
+      await release()
+      return res.status(500).json({ error: 'Could not send the email.' })
+    }
+    if (recent) {
+      await release()
+      return res.status(200).json({ sent: false })
+    }
+  }
+
   // Only a 'rated' step needs the stars, and only 0012 has them: read them
   // separately, so the other steps keep working on a database without 0012.
   let stars: number | null = null
@@ -161,7 +186,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     recipientName: recipient.full_name,
     actorName: (caller as { full_name?: string }).full_name ?? 'Someone',
     title: t.title,
-    dueOn: event.kind === 'assigned' ? t.due_on : null,
+    dueOn: event.kind === 'assigned' || event.kind === 'edited' ? t.due_on : null,
     note: comment,
     stars,
     images,

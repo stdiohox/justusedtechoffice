@@ -2,6 +2,12 @@ import type { OfficeTask, TaskEventKind, TaskStatus } from '@/types/database'
 
 /** Tasks (0011): what the screens call each state and step. */
 
+/**
+ * A task someone gave themselves (0015): no check, no stars, no points. Done
+ * closes it (status 'approved'), and only its owner acts on it.
+ */
+export const isPersonal = (t: OfficeTask) => t.assigned_by === t.assigned_to
+
 export const STATUS_LABEL: Record<TaskStatus, string> = {
   open: 'To do',
   in_progress: 'In progress',
@@ -18,7 +24,11 @@ export const EVENT_LABEL: Record<TaskEventKind, string> = {
   returned: 'sent it back',
   cancelled: 'cancelled it',
   rated: 'rated it',
+  edited: 'edited it',
 }
+
+/** The status as shown: a personal task that is closed by being done reads "Done". */
+export const statusLabel = (t: OfficeTask) => (isPersonal(t) && t.status === 'approved' ? 'Done' : STATUS_LABEL[t.status])
 
 export const isClosed = (t: OfficeTask) => t.status === 'approved' || t.status === 'cancelled'
 
@@ -31,26 +41,37 @@ export const isOverdue = (t: OfficeTask, today: string) =>
  * they gave that is done and waiting for their check. The badge counts these.
  */
 export const needsMe = (t: OfficeTask, userId: string) =>
-  (t.assigned_to === userId && t.status === 'open') || (t.assigned_by === userId && t.status === 'done')
+  !isPersonal(t) && ((t.assigned_to === userId && t.status === 'open') || (t.assigned_by === userId && t.status === 'done'))
 
 /** Who may check (approve or send back) a done task: the giver or an admin, never the assignee. */
 export const canReview = (t: OfficeTask, userId: string, admin: boolean) =>
   t.status === 'done' && t.assigned_to !== userId && (t.assigned_by === userId || admin)
 
-/** Who may cancel an open task: the giver or an admin, never the assignee. */
-export const canCancel = (t: OfficeTask, userId: string, admin: boolean) =>
-  !isClosed(t) && t.assigned_to !== userId && (t.assigned_by === userId || admin)
+/**
+ * Who may act on a task as its giver (0015's edit_task and cancel_task): the
+ * giver or an admin, never the assignee; a personal task, only its owner.
+ */
+const givesIt = (t: OfficeTask, userId: string, admin: boolean) =>
+  isPersonal(t) ? t.assigned_to === userId : t.assigned_to !== userId && (t.assigned_by === userId || admin)
+
+/** Who may cancel an open task. */
+export const canCancel = (t: OfficeTask, userId: string, admin: boolean) => !isClosed(t) && givesIt(t, userId, admin)
+
+/** Who may edit a task: as for cancelling, while it is To do or In progress (0015). */
+export const canEdit = (t: OfficeTask, userId: string, admin: boolean) =>
+  (t.status === 'open' || t.status === 'in_progress') && givesIt(t, userId, admin)
 
 /** Ratings close this long after a task is approved (0012's rate_task). */
 const RATING_DAYS = 7
 
 /**
  * Who may rate (0012): an approved task, by the giver or an admin, never the
- * assignee, for 7 days after it was approved. `now` is passed in so a render
+ * assignee, for 7 days after it was approved; never a personal one (0015). `now` is passed in so a render
  * stays pure.
  */
 export const canRate = (t: OfficeTask, userId: string, admin: boolean, now: number) =>
   t.status === 'approved' &&
+  !isPersonal(t) &&
   t.assigned_to !== userId &&
   (t.assigned_by === userId || admin) &&
   !!t.closed_at &&

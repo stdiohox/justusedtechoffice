@@ -10,8 +10,8 @@
  * must stay true of the code; if the office starts recording something new,
  * the notice changes first.
  */
-/** 2 (0011): tasks. 3 (0012, 0013): stars, images and the weekly leaderboard. 4 (0014): a start before sign-in, if you say one. */
-export const NOTICE_VERSION = 4
+/** 2 (0011): tasks. 3 (0012, 0013): stars, images and the weekly leaderboard. 4 (0014): a start before sign-in, if you say one. 5 (0015): tasks you give yourself, and edits to tasks. */
+export const NOTICE_VERSION = 5
 
 export const NOTICE_TITLE = 'How the office records your time'
 
@@ -30,9 +30,9 @@ export const NOTICE: NoticeSection[] = [
       'If you choose “Working elsewhere”, a “Still there?” comes about every 30 minutes; answer it within 5 minutes. Do not disturb lasts up to 90 minutes at a time.',
       'What you write on your door, your answers to check-ins, and the notes you add to your day.',
       'Your presence and time are not recorded before you file your sign-in. If you started earlier, you can say when, and why; it is kept as said by you.',
-      'Tasks the team gives each other: what the task is, who gave it to whom, its due date, when it was started, done, approved, sent back or cancelled, by whom, and the notes and links added along the way.',
+      'Tasks the team gives each other, and tasks you give yourself: what the task is, who gave it to whom, its due date, when it was started, done, approved, sent back, edited, moved to someone else or cancelled, by whom, what an edit changed, and the notes and links added along the way.',
       'The 1 to 5 stars and the comment given on an approved task, and any images handed in with it.',
-      'A weekly leaderboard, Friday to Friday: for each person, the tasks approved (with their stars) and the reports filed on time. It does not count time in the office, sign-in times or activity.',
+      'A weekly leaderboard, Friday to Friday: for each person, the tasks approved (with their stars) and the reports filed on time. It does not count tasks you give yourself, time in the office, sign-in times or activity.',
     ],
   },
   {
@@ -48,7 +48,7 @@ export const NOTICE: NoticeSection[] = [
       'Everyone in the office sees what is on your door and whether you are in. Office chats, and your reply when you answer a knock “not now”, are readable only by the two people involved.',
       'Mr Tito sees which first steps you have done in the office, and whether and when you read this notice.',
       'Beside your day, and in his daily summary, Mr Tito sees any start you say, and the time of your first task step, knock or chat that day, whether or not you said one.',
-      'A task is seen by the person who gave it and the person it was given to. The office admins, Mr Tito and Hazel, see every task. Hazel sees only tasks: not your reports, your time figures or your notes.',
+      'A task is seen by the person who gave it and the person it was given to; a task you give yourself, by you. The office admins, Mr Tito and Hazel, see every task, including the ones you give yourself. Hazel sees only tasks: not your reports, your time figures or your notes.',
       'The same people see a task’s stars and the images handed in with it.',
       'Everyone in the office sees the whole leaderboard. On Friday evening each person is emailed their own week, the top of the table gets a special email, and Mr Tito and the admins get the whole table.',
     ],

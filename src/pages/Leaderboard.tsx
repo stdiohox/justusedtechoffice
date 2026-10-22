@@ -235,7 +235,7 @@ export function Leaderboard() {
               <p className="mt-2 max-w-[620px] text-text-muted">
                 Everyone earns points the same way, whatever their job: any task counts, whoever gave it, once the person who gave it
                 approves it. They can give it 1 to 5 stars. Stars count in the week the task was approved, if given before that week
-                closed. Time in the office and sign-in times are not scored. People who have left the team are not shown. The week
+                closed. Tasks you give yourself, time in the office and sign-in times are not scored. People who have left the team are not shown. The week
                 closes on Friday at {weekClose}; everyone gets their week by email, and the top of the table a special one.
               </p>
             </details>

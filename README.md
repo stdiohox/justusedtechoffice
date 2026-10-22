@@ -94,6 +94,19 @@ Nothing is recorded before someone files their sign-in. Someone who started earl
 view and in his summary as "said by them", beside the evidence the office already has: the time of
 their first task step, knock or chat message that day.
 
+## Personal tasks, and editing tasks (0015)
+
+Anyone can give a task to themselves (**Myself** in Give a task, or the **Personal** tab, which shows
+what is to do, in progress and done in the last 7 days). Done closes it at once: no check, no stars,
+no leaderboard points. Only its owner starts, finishes, edits or cancels it; Mr Tito and Hazel can see
+it; nobody is emailed.
+
+The person who gave a task, or an admin, can edit it while it is To do or In progress: the title,
+details, due date, or who it is for. Each edit is one step in the task's history saying what changed.
+The person it is for is told in the office and by email (at most one edit email per task every 30
+minutes). Moving a task starts it afresh, as a new task, for the new person; the person who had it no
+longer sees it.
+
 ## Ratings and the weekly leaderboard (0012)
 
 The person who gave a task (or an admin) rates it 1 to 5 stars once it is approved; changeable for 7

@@ -414,11 +414,12 @@ export function officeKnock(i: { recipientName: string; fromName: string; office
   }
 }
 
-export type TaskEmailKind = 'assigned' | 'done' | 'returned' | 'rated'
+export type TaskEmailKind = 'assigned' | 'done' | 'returned' | 'rated' | 'edited'
 
 /**
  * A task step (0011), to the other person: a new task to the assignee, "done,
- * please check" to the giver, "sent back" to the assignee. The title and the
+ * please check" to the giver, "sent back" to the assignee, and (0015) "edited"
+ * to the assignee, with what changed and the task as it now reads. The title and the
  * note are typed by people, so both are cleaned like names (one line, cut short).
  */
 export function officeTask(i: {
@@ -446,12 +447,20 @@ export function officeTask(i: {
     i.kind === 'assigned' ? `${actor} gave you a task${due ? `, due ${due}` : ''}:`
     : i.kind === 'done' ? `${actor} has finished a task you gave them. It is waiting for your check:`
     : i.kind === 'rated' ? `${actor} rated your task ${starLine(n)} (${n} of 5):`
+    : i.kind === 'edited' ? `${actor} edited a task you were given${due ? `. It is due ${due}` : ''}. It now reads:`
     : `${actor} sent a task back to you:`
-  const noteLabel = i.kind === 'returned' ? 'What still needs doing' : i.kind === 'rated' ? 'Their comment' : 'Their note'
+  const noteLabel =
+    i.kind === 'returned' ? 'What still needs doing'
+    : i.kind === 'rated' ? 'Their comment'
+    : i.kind === 'edited' ? 'What changed'
+    // 'assigned' has a note only when a task was moved (0015): "Moved from …", said as it is.
+    : i.kind === 'assigned' ? ''
+    : 'Their note'
   const subject =
     i.kind === 'assigned' ? `New task from ${actor}: ${title}`
     : i.kind === 'done' ? `Done, please check: ${title}`
     : i.kind === 'rated' ? `${n} of 5 stars: ${title}`
+    : i.kind === 'edited' ? `Task edited: ${title}`
     : `Sent back: ${title}`
   const linkLabel = i.kind === 'done' ? 'Open Tasks to check it' : 'Open Tasks'
   const imagesLine = i.kind === 'done' && i.images ? `${i.images} ${i.images === 1 ? 'image' : 'images'} attached.` : ''
@@ -461,7 +470,7 @@ export function officeTask(i: {
       p(`Hi ${esc(firstNameOf(i.recipientName))},`) +
         p(esc(lead)) +
         p(`<strong>${esc(title)}</strong>`) +
-        (note ? p(`<span style="color:${MUTED};">${esc(noteLabel)}:</span> ${esc(note)}`) : '') +
+        (note ? p(noteLabel ? `<span style="color:${MUTED};">${esc(noteLabel)}:</span> ${esc(note)}` : `<span style="color:${MUTED};">${esc(note)}</span>`) : '') +
         (imagesLine ? p(esc(imagesLine)) : '') +
         link(i.tasksUrl, linkLabel),
     ),
@@ -470,7 +479,7 @@ export function officeTask(i: {
       '',
       lead,
       title,
-      ...(note ? ['', `${noteLabel}: ${note}`] : []),
+      ...(note ? ['', noteLabel ? `${noteLabel}: ${note}` : note] : []),
       ...(imagesLine ? ['', imagesLine] : []),
       '',
       `${linkLabel}: ${i.tasksUrl}`,
