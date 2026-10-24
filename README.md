@@ -84,14 +84,15 @@ back in progress. The giver (or an admin) can cancel a task that is not yet appr
   10 MB each), shown as thumbnails to the people on the task and the admins. Stored in the private
   `task-proof` bucket; an image uploaded but never handed in is removed by the alerts route after a day.
 
-## The day's hours, and work started before sign-in (0014)
+## The day's hours, and work started before sign-in (0014, 0017)
 
-Since 0014 the day is: sign-in at 11:00 (on time until 11:15), midday report 15:00 to 16:00, end-of-day
-report from 19:00 (on time until 20:30). Mr Tito's summary goes after 20:30 and the time figures cover
-11:00 to 20:30. Every screen and email reads these from `office_settings`; change them there.
+Since 0017 the day is: sign-in from 09:00 (on time until 11:00), midday report 15:00 to 16:00,
+end-of-day report from 17:00 (on time until 19:00). Mr Tito's summary goes after 19:00, the time
+figures cover 09:00 to 19:00, and the leaderboard week closes Friday 19:00. Every screen and email
+reads these from `office_settings`; change them there.
 
 Nothing is recorded before someone files their sign-in. Someone who started earlier says so under
-**Your time in the office** ("I started before 11:00": a time and what on). Mr Tito sees it on the Day
+**Your time in the office** ("I started before 09:00": a time and what on). Mr Tito sees it on the Day
 view and in his summary as "said by them", beside the evidence the office already has: the time of
 their first task step, knock or chat message that day.
 
@@ -131,6 +132,25 @@ invites list fills once 0016 is in.
 Rollback: `0016_proof_links_and_titles.down.sql` (proof required again; each report or task keeps
 its first link only; roles are dropped; invites back to Mr Tito alone).
 
+## HR: Emmanuella (0017)
+
+`profiles.role = 'hr'` is a third access level. HR sees what Mr Tito sees (every report, proof file,
+time figure, note, flag and task) and runs the people: invites, pausing and removing people, days
+away, photos, switching people off and on, names and roles. She still files her own reports (the
+**Mine** tab on Team reports) and is on the leaderboard. She gets a copy of Mr Tito's alert emails and
+daily summary, and the Friday table. What stays Mr Tito's: trial or enforced, the short day, his own
+account and place in the office, and who has which access. HR cannot pause or remove herself.
+Access ends at once if she is switched off, paused, or set back to member.
+
+To apply: run `0017_hr_and_new_hours.sql` in the SQL editor, then merge `hr-and-new-hours` (Vercel
+deploys main). It also sets the new hours. If Emmanuella (hr@justusedtech.org) had not signed in yet
+when it ran, invite her from Settings and, once she has signed in, run:
+`update public.profiles set role = 'hr' where email = 'hr@justusedtech.org';`
+Everyone re-reads the staff notice (v6, which names her) on their next visit.
+
+Rollback: `0017_hr_and_new_hours.down.sql` (hours back to 11:00/11:15 and 19:00/20:30; every HR
+person back to member).
+
 ## Ratings and the weekly leaderboard (0012)
 
 The person who gave a task (or an admin) rates it 1 to 5 stars once it is approved; changeable for 7
@@ -167,7 +187,7 @@ The 10 minutes to "away" is in the screens (`src/lib/presence.ts`), not the data
 
 ## Rolling back
 
-`supabase/rollbacks/`, one per migration, **newest first** (0016 down to 0002). Each is one
+`supabase/rollbacks/`, one per migration, **newest first** (0017 down to 0002). Each is one
 transaction. 0002's and 0007's leave their storage buckets (`proof`, `avatars`): empty and delete
 them in Storage afterwards (Supabase refuses SQL deletes on storage tables).
 

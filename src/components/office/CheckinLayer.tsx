@@ -197,7 +197,7 @@ export function SignedOutCard({ className }: { className?: string }) {
       >
         <div className="min-w-[200px] flex-1">
           <label htmlFor={`${id}-note`} className="mb-1 block text-[12px] text-text-secondary">
-            Where were you? (optional, Mr Tito sees it)
+            Where were you? (optional, Mr Tito and HR see it)
           </label>
           <Input
             id={`${id}-note`}
@@ -275,7 +275,7 @@ export function ReturnPrompt() {
       </h2>
       <p className="mt-0.5 text-[13px] text-text-secondary">
         You were away from the office {from.time} to {to.time}. Working somewhere else? Say so on your day. It changes no figure;
-        Mr Tito sees it beside them.
+        Mr Tito and HR see it beside them.
       </p>
       <form
         className="mt-2.5 flex flex-wrap items-end gap-2"

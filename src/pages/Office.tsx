@@ -345,8 +345,8 @@ export function Office() {
   const { data: statuses } = useOfficeStatuses(inOffice)
   useOfficeStatusRealtime(inOffice && !!statuses?.available)
   const dayStart = wallTimeToInstant(clock.date, '00:00', zone).instant.toISOString()
-  // 0008: who has signed out today, for Mr Tito's doors (RLS gives others only their own).
-  const { data: entries } = useEntries(clock.date, inOffice && role.isManager)
+  // 0008: who has signed out today, for Mr Tito's and HR's doors (RLS gives others only their own).
+  const { data: entries } = useEntries(clock.date, inOffice && role.seesTeam)
 
   if (isLoading || role.loading) {
     return (
@@ -479,7 +479,7 @@ export function Office() {
                   action={doorFor(m)}
                   door={doorOf(m.user_id)}
                   today={clock.date}
-                  signedOut={role.isManager ? signedOutOf(m.user_id) : null}
+                  signedOut={role.seesTeam ? signedOutOf(m.user_id) : null}
                 />
               ))}
             </ul>

@@ -157,13 +157,13 @@ export function useTaskEvents(taskId: string | null) {
 }
 
 /**
- * An admin sees and checks every task: the office manager, or anyone labelled
- * manager (0011's is_task_admin). Display only: the database decides.
+ * An admin sees and checks every task: the office manager, HR (0017), or
+ * anyone labelled manager (0011's is_task_admin). Display only: the database decides.
  */
 export function useIsTaskAdmin(): boolean {
   const role = useAuthStore((s) => s.profile?.role)
-  const { isManager } = useOfficeRole()
-  return isManager || role === 'manager'
+  const { seesTeam } = useOfficeRole()
+  return seesTeam || role === 'manager'
 }
 
 /**

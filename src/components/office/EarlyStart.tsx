@@ -101,7 +101,7 @@ export function EarlyStart({ settings, date }: { settings: OfficeSettings; date:
       {open ? (
         <form onSubmit={save} aria-label="When you started today" className="space-y-3" noValidate>
           <p className="text-[13px] text-text-secondary">
-            Began before {start}? Say when. Mr Tito sees it beside your day, as said by you.
+            Began before {start}? Say when. Mr Tito and HR see it beside your day, as said by you.
           </p>
           <div className="flex flex-wrap gap-3">
             <div>

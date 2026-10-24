@@ -3,6 +3,7 @@ import type { Role } from '@/types/database'
 /** Team roles, for display (0001). */
 export const ROLES: { value: Role; label: string }[] = [
   { value: 'manager', label: 'Manager' },
+  { value: 'hr', label: 'HR' },
   { value: 'member', label: 'Team member' },
 ]
 

@@ -49,7 +49,7 @@ function Logo({ className }: { className?: string }) {
 
 export function AppShell() {
   const { profile, signOut } = useAuthStore()
-  const { isManager, isMember } = useOfficeRole()
+  const { seesTeam, isMember } = useOfficeRole()
   const { resolvedTheme, setTheme } = useThemeStore()
   const toast = useToastStore((s) => s.toast)
   const hideToast = useToastStore((s) => s.hideToast)
@@ -57,8 +57,8 @@ export function AppShell() {
   const { data: tasks } = useTasks()
   const { data: boardOn } = useLeaderboardAvailable()
 
-  // Settings: Mr Tito, and anyone labelled manager (Hazel), as AdminRoute.
-  const isAdmin = isManager || profile?.role === 'manager'
+  // Settings: Mr Tito, HR, and anyone labelled manager (Hazel), as AdminRoute.
+  const isAdmin = seesTeam || profile?.role === 'manager'
   const items = NAV.filter(
     (n) => (!n.adminOnly || isAdmin) && (n.to !== '/tasks' || tasks?.available) && (n.to !== '/leaderboard' || boardOn),
   )
