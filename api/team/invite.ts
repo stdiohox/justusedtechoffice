@@ -6,8 +6,9 @@ import { officeInvite } from '../_lib/templates.js'
 
 /**
  * An office admin invites someone (Settings > Invite someone): Mr Tito
- * (office_settings.manager_id), or anyone labelled manager (Hazel), the same
- * people as 0011's is_task_admin(), and only while their profile is active.
+ * (office_settings.manager_id), anyone labelled manager (Hazel), or HR while
+ * she is in the office (0017), the same people as is_task_admin(), and only
+ * while their profile is active.
  * The invite is always for a member, with an optional job title (0016), sent
  * only when given, so this works before 0016 is applied.
  *
@@ -55,7 +56,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       db.from('office_settings').select('manager_id').eq('id', 1).maybeSingle(),
       db.from('profiles').select('full_name, role, deactivated_at').eq('id', userId).maybeSingle(),
     ])
-    const isAdmin = (!!settings?.manager_id && settings.manager_id === userId) || me?.role === 'manager'
+    // HR counts only while she is in the office, as 0017's is_office_manager().
+    const hrInOffice =
+      me?.role === 'hr' &&
+      !!(await db.from('office_members').select('active').eq('user_id', userId).maybeSingle()).data?.active
+    const isAdmin = (!!settings?.manager_id && settings.manager_id === userId) || me?.role === 'manager' || hrInOffice
     if (!me || me.deactivated_at || !isAdmin) {
       return res.status(403).json({ error: 'Only Mr Tito or an office admin can invite people.' })
     }

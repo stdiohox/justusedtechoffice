@@ -17,14 +17,14 @@ export function ProtectedRoute({ children }: { children: ReactNode }) {
 }
 
 /**
- * Settings is for the office admins: Mr Tito, and anyone labelled manager
- * (Hazel), who invites people and sets roles there. Anyone else sees why, and
- * a way back; never a blank screen. Display only: RLS and the routes decide.
+ * Settings is for the office admins: Mr Tito, HR (0017), and anyone labelled
+ * manager (Hazel), who invite people and set roles there. Anyone else sees why,
+ * and a way back; never a blank screen. Display only: RLS and the routes decide.
  */
 export function AdminRoute({ children }: { children: ReactNode }) {
-  const { loading, isError, isManager } = useOfficeRole()
+  const { loading, isError, seesTeam } = useOfficeRole()
   const role = useAuthStore((s) => s.profile?.role)
-  const isAdmin = isManager || role === 'manager'
+  const isAdmin = seesTeam || role === 'manager'
   const navigate = useNavigate()
   const queryClient = useQueryClient()
   if (loading) return <div className="min-h-[50dvh] bg-surface" />

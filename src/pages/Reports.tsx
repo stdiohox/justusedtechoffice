@@ -12,18 +12,20 @@ import type { OfficeSettings } from '@/types/database'
 
 /**
  * Daily reports (tito-crm's VIRTUAL-OFFICE-PLAN Phase 1). One route, two screens:
- * a member files their own day; Mr Tito (office_settings.manager_id) reads
- * everyone's and runs the team. Which one renders is a convenience; what each
- * person can read and write is decided by RLS and submit_report().
+ * a member files their own day; Mr Tito (office_settings.manager_id) and HR
+ * (0017) read everyone's and run the team, and HR files her own day under
+ * Mine. Which one renders is a convenience; what each person can read and
+ * write is decided by RLS and submit_report().
  */
 
-type Tab = 'day' | 'week' | 'month' | 'team'
-const TABS: { id: Tab; label: string }[] = [
+type Tab = 'day' | 'week' | 'month' | 'team' | 'mine'
+const TEAM_TABS: { id: Tab; label: string }[] = [
   { id: 'day', label: 'Day' },
   { id: 'week', label: 'Week' },
   { id: 'month', label: 'Month' },
   { id: 'team', label: 'Team' },
 ]
+const HR_TABS: { id: Tab; label: string }[] = [...TEAM_TABS, { id: 'mine', label: 'Mine' }]
 
 /** One person's month (0010), picked from everyone who files reports. */
 function MemberMonth({ settings, members }: { settings: OfficeSettings; members: OfficeMemberWithUser[] }) {
@@ -54,7 +56,11 @@ function MemberMonth({ settings, members }: { settings: OfficeSettings; members:
   )
 }
 
-function Manager({ settings }: { settings: OfficeSettings }) {
+/** `mine`: HR, who also files her own day (0017). */
+function Manager({ settings, mine }: { settings: OfficeSettings; mine: boolean }) {
+  const TABS = mine ? HR_TABS : TEAM_TABS
+  // Five tabs are narrower, so the row still fits a phone.
+  const w = TABS.length > 4 ? 64 : 72
   const [tab, setTab] = useState<Tab>('day')
   const [date, setDate] = useState(() => officeDate(settings, new Date()))
   const { data: members } = useOfficeMembers()
@@ -86,8 +92,8 @@ function Manager({ settings }: { settings: OfficeSettings }) {
           {/* The thumb slides under the selected tab; the buttons sit on top. */}
           <span
             aria-hidden
-            className="seg-thumb absolute top-[3px] bottom-[3px] left-[3px] w-[72px] rounded-[10px] bg-surface-raised shadow-[var(--shadow-sm)]"
-            style={{ transform: `translateX(${TABS.findIndex((t) => t.id === tab) * 72}px)` }}
+            className="seg-thumb absolute top-[3px] bottom-[3px] left-[3px] rounded-[10px] bg-surface-raised shadow-[var(--shadow-sm)]"
+            style={{ width: w, transform: `translateX(${TABS.findIndex((t) => t.id === tab) * w}px)` }}
           />
           {TABS.map((t) => (
             <button
@@ -99,8 +105,9 @@ function Manager({ settings }: { settings: OfficeSettings }) {
               aria-controls="reports-panel"
               tabIndex={tab === t.id ? 0 : -1}
               onClick={() => setTab(t.id)}
+              style={{ width: w }}
               className={cn(
-                'relative w-[72px] rounded-[10px] text-[13px] font-medium transition-colors duration-150',
+                'relative rounded-[10px] text-[13px] font-medium transition-colors duration-150',
                 tab === t.id ? 'font-semibold text-text-primary' : 'text-text-muted hover:text-text-primary',
               )}
             >
@@ -127,6 +134,8 @@ function Manager({ settings }: { settings: OfficeSettings }) {
           />
         ) : tab === 'month' ? (
           <MemberMonth settings={settings} members={members} />
+        ) : tab === 'mine' ? (
+          <MyDay settings={settings} />
         ) : (
           <OfficeTeam settings={settings} members={members} />
         )}
@@ -150,7 +159,7 @@ export function Reports() {
   if (isError || role.isError || !settings) {
     return <EmptyState title="Could not load the office" body={error instanceof Error ? error.message : 'Try again in a moment.'} />
   }
-  if (role.isManager) return <Manager settings={settings} />
+  if (role.seesTeam) return <Manager settings={settings} mine={role.isHr} />
   if (!role.isMember) {
     return (
       <EmptyState

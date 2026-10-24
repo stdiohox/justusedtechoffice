@@ -3,8 +3,8 @@
  * migrations in supabase/migrations (0001 to 0011).
  */
 
-/** manager: Mr Tito. member: everyone else (0001). */
-export type Role = 'manager' | 'member'
+/** manager: Mr Tito, and the admins (Hazel). hr: sees what Mr Tito sees (0017). member: everyone else (0001). */
+export type Role = 'manager' | 'hr' | 'member'
 
 /** profiles (0001, 0007): one per person on the team. */
 export interface Profile {

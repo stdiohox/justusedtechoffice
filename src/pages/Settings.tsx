@@ -2,7 +2,7 @@ import { useId, useRef, useState } from 'react'
 import { Camera, Mail, Pencil, UserPlus } from 'lucide-react'
 import { Button, EmptyState, FieldError, Input, Label, Skeleton } from '@/components/ui/primitives'
 import { useInvite, useInvites, useSetDeactivated, useSetJobTitle, useTeam, useWithdrawInvite, type TeamMember } from '@/hooks/useTeam'
-import { useOfficeRole } from '@/hooks/useOffice'
+import { useOfficeRole, useOfficeSettings } from '@/hooks/useOffice'
 import { useHasColumn } from '@/hooks/useHasColumn'
 import { usePhotos } from '@/hooks/usePhotos'
 import { useAuthStore } from '@/stores/authStore'
@@ -286,8 +286,10 @@ function TitleCell({ member, editable }: { member: TeamMember; editable: boolean
 
 function TeamTable({ titles }: { titles: boolean }) {
   const me = useAuthStore((s) => s.profile?.id)
-  // Switching off and photos stay Mr Tito's (the database enforces it too).
-  const { isManager } = useOfficeRole()
+  // Switching off and photos are Mr Tito's and HR's (0017), never on Mr Tito's
+  // own row for HR (the database enforces it too).
+  const { isManager, seesTeam } = useOfficeRole()
+  const tito = useOfficeSettings().data?.manager_id
   const { data: team, isLoading, isError, error } = useTeam()
   const { data: photos } = usePhotos()
   const setDeactivated = useSetDeactivated()
@@ -305,7 +307,7 @@ function TeamTable({ titles }: { titles: boolean }) {
             <th scope="col" className="py-2 pr-4 font-semibold">Email</th>
             {titles ? <th scope="col" className="py-2 pr-4 font-semibold">Role</th> : null}
             <th scope="col" className="py-2 pr-4 font-semibold">Access</th>
-            {isManager ? (
+            {seesTeam ? (
               <th scope="col" className="py-2 font-semibold">
                 <span className="sr-only">Actions</span>
               </th>
@@ -329,7 +331,7 @@ function TeamTable({ titles }: { titles: boolean }) {
                 </td>
               ) : null}
               <td className="py-2 pr-4 text-text-secondary">{roleLabel(m.role)}</td>
-              {isManager ? (
+              {seesTeam ? (
                 <td className="py-2 text-right whitespace-nowrap">
                   {photos?.available ? (
                     <Button
@@ -343,7 +345,7 @@ function TeamTable({ titles }: { titles: boolean }) {
                       Photo
                     </Button>
                   ) : null}
-                  {m.id !== me ? (
+                  {m.id !== me && (isManager || m.id !== tito) ? (
                     <Button
                       variant="ghost"
                       size="sm"
@@ -376,7 +378,7 @@ function TeamTable({ titles }: { titles: boolean }) {
 }
 
 export function Settings() {
-  const { isManager } = useOfficeRole()
+  const { seesTeam } = useOfficeRole()
   // Roles (job titles) once 0016 is in.
   const titles = useHasColumn('profiles', 'job_title')
   return (
@@ -394,10 +396,10 @@ export function Settings() {
           The team
         </h2>
         <p className="mb-3 text-[12px] text-text-muted">
-          {titles ? 'Role is what someone does; it shows on their door. Access is what they can see: Manager is an admin. ' : ''}
-          {isManager
+          {titles ? 'Role is what someone does; it shows on their door. Access is what they can see: Manager is an admin, HR sees what Mr Tito sees. ' : ''}
+          {seesTeam
             ? 'Switching someone off shuts them out of the office at once and keeps their reports. Who files reports, pauses and days away are in Reports > Team.'
-            : 'Switching someone off, photos and the office’s settings are Mr Tito’s.'}
+            : 'Switching someone off and photos are for Mr Tito and HR; the office’s settings are Mr Tito’s.'}
         </p>
         <TeamTable titles={titles} />
       </section>

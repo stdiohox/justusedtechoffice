@@ -245,19 +245,21 @@ function YourTime({ settings, date }: { settings: OfficeSettings; date: string }
   const { data: summary } = useTimeSummary(monday, date, true)
   const { data: notes } = useDayNotes(addDays(date, -13), date, true)
   if (!summary?.available) return null
-  const today = summary.rows.find((r) => r.work_date === date)
-  const week = sumDays(summary.rows)
+  // Yours only: HR (0017) is given everyone's rows by the same calls.
+  const rows = summary.rows.filter((r) => r.user_id === userId)
+  const today = rows.find((r) => r.work_date === date)
+  const week = sumDays(rows)
   return (
     <section aria-labelledby="your-time-h" className="hairline rounded-[14px] bg-surface-raised p-4 shadow-[var(--shadow-sm)] sm:p-5">
       <h2 id="your-time-h" className="text-[15px] font-medium text-text-primary">
         Your time in the office
       </h2>
       <p className="mt-0.5 text-[12px] text-text-muted">
-        On the server's clock, {hhmm(settings.signin_reminder)} to {hhmm(settings.eod_deadline)}, to the nearest 5 minutes. Mr Tito sees exactly these figures, with your reports and your notes.
+        On the server's clock, {hhmm(settings.signin_reminder)} to {hhmm(settings.eod_deadline)}, to the nearest 5 minutes. Mr Tito and HR see exactly these figures, with your reports and your notes.
       </p>
       <h3 className="mt-4 text-[12px] font-medium tracking-[0.06em] text-text-secondary uppercase">Today</h3>
       {today ? <TimeLine t={today} className="mt-1.5" /> : <p className="mt-1 text-[13px] text-text-muted">Nothing recorded yet today.</p>}
-      {summary.rows.length > 1 ? (
+      {rows.length > 1 ? (
         <>
           <h3 className="mt-4 text-[12px] font-medium tracking-[0.06em] text-text-secondary uppercase">This week so far</h3>
           <TimeLine t={week} className="mt-1.5" />
@@ -271,7 +273,7 @@ function YourTime({ settings, date }: { settings: OfficeSettings; date: string }
       <EarlyStart settings={settings} date={date} />
       {notes?.available ? (
         <>
-          <DayNotes notes={notes.rows.filter((n) => n.work_date === date)} zone={settings.timezone} label="Your notes today" />
+          <DayNotes notes={notes.rows.filter((n) => n.user_id === userId && n.work_date === date)} zone={settings.timezone} label="Your notes today" />
           <AddDayNote today={date} />
         </>
       ) : null}

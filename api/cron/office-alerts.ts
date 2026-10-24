@@ -38,6 +38,8 @@ import type {
  * Everyone is emailed at their login address (profiles.email). Mr Tito
  * is office_settings.manager_id; his alerts and summary go to
  * OFFICE_MANAGER_EMAIL instead when that is set (his login stays as it is).
+ * HR (profiles.role 'hr', active in the office, 0017) gets a copy of each
+ * once his has gone; a copy that fails is reported, not retried.
  *
  * ONE CALL, IN ORDER
  *   1. Flags not yet sent (missed, late, reused proof): one email to Mr Tito
@@ -85,7 +87,7 @@ function secretMatches(given: string | undefined, secret: string): boolean {
 interface Member {
   user_id: string
   active: boolean
-  user: { full_name: string; email: string; deactivated_at: string | null } | null
+  user: { full_name: string; email: string; deactivated_at: string | null; role: string } | null
 }
 
 interface Person {
@@ -108,6 +110,8 @@ interface Ctx {
   /** Active, not deactivated office members. Only they are emailed. */
   people: Map<string, Person>
   manager: Person | null
+  /** 0017: HR, who gets a copy of Mr Tito's alerts and summary. */
+  hr: (Person & { id: string })[]
   problems: string[]
   sent: string[]
 }
@@ -149,6 +153,13 @@ async function toManager(ctx: Ctx, email: Email, key: string): Promise<boolean> 
     return false
   }
   return send(ctx, ctx.manager, email, key)
+}
+
+/** Copies for HR, after Mr Tito's has gone. False if any copy failed. */
+async function toHr(ctx: Ctx, email: Email, key: string): Promise<boolean> {
+  let ok = true
+  for (const p of ctx.hr) ok = (await send(ctx, p, email, `${key}/hr/${p.id}`)) && ok
+  return ok
 }
 
 /**
@@ -200,8 +211,10 @@ async function sendFlags(ctx: Ctx): Promise<void> {
   })
   // One key per exact set of flags: a retry of this batch is the same email.
   const batch = createHash('sha256').update(flags.map((f) => f.id).sort().join(',')).digest('hex').slice(0, 32)
-  const ok = await toManager(ctx, officeAlerts({ lines, reportsUrl: ctx.reportsUrl }), `office-flags/${batch}`)
+  const alert = officeAlerts({ lines, reportsUrl: ctx.reportsUrl })
+  const ok = await toManager(ctx, alert, `office-flags/${batch}`)
   if (!ok) return
+  await toHr(ctx, alert, `office-flags/${batch}`)
 
   const { error: markErr } = await ctx.db
     .from('office_flags')
@@ -360,7 +373,11 @@ async function sendDigest(ctx: Ctx, due: OfficeRosterDay[], reports: OfficeRepor
     shortDayMinutes: ctx.settings.short_day_minutes ?? null,
   })
 
-  if (!(await toManager(ctx, email, `office-digest/${ctx.date}`))) await release(ctx.db, key)
+  if (!(await toManager(ctx, email, `office-digest/${ctx.date}`))) {
+    await release(ctx.db, key)
+    return
+  }
+  await toHr(ctx, email, `office-digest/${ctx.date}`)
 }
 
 /* ------------------------------------------------------- 4. leaderboard */
@@ -472,12 +489,12 @@ async function sendLeaderboard(ctx: Ctx): Promise<void> {
       ok = (await send(ctx, { name: u.full_name, email: u.email }, email, `leaderboard/${ctx.date}/${r.user_id}`)) && ok
     }
 
-    // The whole table: Mr Tito (at OFFICE_MANAGER_EMAIL when set), then every other admin.
+    // The whole table: Mr Tito (at OFFICE_MANAGER_EMAIL when set), then every other admin and HR.
     if (ctx.manager) {
       ok = (await send(ctx, ctx.manager, leaderboardTable({ name: ctx.manager.name, rows, week, boardUrl: ctx.boardUrl }), `leaderboard-table/${ctx.date}/manager`)) && ok
     }
     for (const u of byId.values()) {
-      if (u.role !== 'manager' || u.id === ctx.settings.manager_id || !u.email) continue
+      if ((u.role !== 'manager' && u.role !== 'hr') || u.id === ctx.settings.manager_id || !u.email) continue
       ok = (await send(ctx, { name: u.full_name, email: u.email }, leaderboardTable({ name: u.full_name, rows, week, boardUrl: ctx.boardUrl }), `leaderboard-table/${ctx.date}/${u.id}`)) && ok
     }
     // Nothing went: try again on the next run. Some went: keep the claim, so
@@ -579,7 +596,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     // Everyone, paused included, so a paused person's flag still has a name.
     const { data: memberRows, error: mErr } = await db
       .from('office_members')
-      .select('user_id, active, user:profiles!office_members_user_id_fkey (full_name, email, deactivated_at)')
+      .select('user_id, active, user:profiles!office_members_user_id_fkey (full_name, email, deactivated_at, role)')
     if (mErr) throw new Error(`members: ${mErr.message}`)
     const members = (memberRows ?? []) as unknown as Member[]
 
@@ -613,6 +630,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           .map((m) => [m.user_id, { name: m.user!.full_name, email: m.user!.email }]),
       ),
       manager,
+      hr: members
+        .filter((m) => m.active && m.user?.role === 'hr' && m.user.email && !m.user.deactivated_at)
+        .map((m) => ({ id: m.user_id, name: m.user!.full_name, email: m.user!.email })),
       problems: [],
       sent: [],
     }

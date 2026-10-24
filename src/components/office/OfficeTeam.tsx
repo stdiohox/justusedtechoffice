@@ -6,10 +6,12 @@ import {
   useOfficeAbsences,
   useRemoveAbsence,
   useRemoveOfficeMember,
+  useOfficeRole,
   useUpdateOfficeMember,
   type OfficeMemberWithUser,
 } from '@/hooks/useOffice'
 import { useTeam } from '@/hooks/useTeam'
+import { useAuthStore } from '@/stores/authStore'
 import { titleOf } from '@/lib/constants'
 import type { OfficeSettings } from '@/types/database'
 import { Avatar } from '@/components/office/OfficeVisuals'
@@ -196,6 +198,11 @@ function SetupCell({ userId, zone }: { userId: string; zone: string }) {
 export function OfficeTeam({ settings, members }: { settings: OfficeSettings; members: OfficeMemberWithUser[] }) {
   const update = useUpdateOfficeMember()
   const remove = useRemoveOfficeMember()
+  const me = useAuthStore((s) => s.profile?.id)
+  const { isManager } = useOfficeRole()
+  // HR (0017) pauses and removes people, but not Mr Tito, and not herself (she
+  // would lock herself out). The database refuses both too.
+  const canChange = (userId: string) => isManager || (userId !== settings.manager_id && userId !== me)
   const { data: onboarding } = useOnboardingStatus(true)
   const setup = !!onboarding?.available
 
@@ -239,7 +246,7 @@ export function OfficeTeam({ settings, members }: { settings: OfficeSettings; me
                       <td className="py-2 pr-4">{m.user_id === settings.manager_id ? null : <SetupCell userId={m.user_id} zone={settings.timezone} />}</td>
                     ) : null}
                     <td className="py-2 text-right whitespace-nowrap">
-                      {m.user_id !== settings.manager_id ? (
+                      {m.user_id !== settings.manager_id && canChange(m.user_id) ? (
                         <Button
                           variant="ghost"
                           size="sm"
@@ -250,19 +257,21 @@ export function OfficeTeam({ settings, members }: { settings: OfficeSettings; me
                           {m.active ? 'Pause' : 'Resume'}
                         </Button>
                       ) : null}
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        className={TOUCH}
-                        aria-label={`Remove ${m.user?.full_name ?? 'this person'} from the office`}
-                        loading={remove.isPending && remove.variables === m.user_id}
-                        onClick={() => {
-                          if (window.confirm(`Remove ${m.user?.full_name ?? 'this person'} from the office? Their past reports are kept.`))
-                            remove.mutate(m.user_id)
-                        }}
-                      >
-                        Remove
-                      </Button>
+                      {canChange(m.user_id) ? (
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className={TOUCH}
+                          aria-label={`Remove ${m.user?.full_name ?? 'this person'} from the office`}
+                          loading={remove.isPending && remove.variables === m.user_id}
+                          onClick={() => {
+                            if (window.confirm(`Remove ${m.user?.full_name ?? 'this person'} from the office? Their past reports are kept.`))
+                              remove.mutate(m.user_id)
+                          }}
+                        >
+                          Remove
+                        </Button>
+                      ) : null}
                     </td>
                   </tr>
                 ))}

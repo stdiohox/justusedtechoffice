@@ -75,18 +75,31 @@ export function useOfficeMembers() {
 /**
  * Who the signed-in person is to the office. Display only: RLS and
  * submit_report() are what actually decide.
+ *   isManager  Mr Tito (office_settings.manager_id): the office's rules are his.
+ *   isHr       HR (0017): sees what Mr Tito sees and runs the people, files her own day.
+ *   seesTeam   either of them (0017's is_office_manager()).
  */
-export function useOfficeRole(): { loading: boolean; isError: boolean; isManager: boolean; isMember: boolean } {
+export function useOfficeRole(): {
+  loading: boolean
+  isError: boolean
+  isManager: boolean
+  isHr: boolean
+  seesTeam: boolean
+  isMember: boolean
+} {
   const profile = useAuthStore((s) => s.profile)
   const settings = useOfficeSettings()
   const members = useOfficeMembers()
   const isManager = !!profile && settings.data?.manager_id === profile.id
   const isMember = !!profile && !!members.data?.some((m) => m.user_id === profile.id && m.active)
+  const isHr = isMember && profile?.role === 'hr' && !profile.deactivated_at
   return {
     loading: settings.isLoading || members.isLoading,
     // A failed read must not be mistaken for "not in the office".
     isError: settings.isError || members.isError,
     isManager,
+    isHr,
+    seesTeam: isManager || isHr,
     isMember: isMember || isManager,
   }
 }
