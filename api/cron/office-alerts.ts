@@ -222,7 +222,9 @@ async function sendFlags(ctx: Ctx): Promise<void> {
     .in('id', flags.map((f) => f.id))
   if (markErr) throw new Error(`marking flags sent failed: ${markErr.message}`)
 
-  for (const f of flags.filter((f) => f.flag === 'missed')) {
+  // The nudge says "you can still file it". A missed end of day can't be
+  // filed any more (0018), so it is not sent for that one.
+  for (const f of flags.filter((f) => f.flag === 'missed' && f.kind !== 'eod')) {
     const name = ctx.names.get(f.user_id) ?? ''
     await toMember(
       ctx,

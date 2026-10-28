@@ -9,6 +9,7 @@ import { useOfficeMembers, useOfficeRole, useOfficeSettings, type OfficeMemberWi
 import { usePresence } from '@/hooks/useOfficePresence'
 import { useNow } from '@/hooks/useNow'
 import { titleOf } from '@/lib/constants'
+import { hhmm } from '@/lib/office'
 import { mapStatus, type MapStatus } from '@/lib/presence'
 import { localParts, wallTimeToInstant } from '@/lib/timezones'
 import { doorView, steppedOut, EMPTY_DOOR, type DoorView } from '@/lib/door'
@@ -241,6 +242,7 @@ function YourStatus({
   door,
   today,
   nowTime,
+  signinOpens,
   doorsReady,
   reasons,
   dayStart,
@@ -251,6 +253,8 @@ function YourStatus({
   door: DoorView
   today: string
   nowTime: string
+  /** Sign-in can't be filed before this (0018). */
+  signinOpens: string | null
   doorsReady: boolean
   /** 0010: reasons beside "back at". */
   reasons: boolean
@@ -266,6 +270,7 @@ function YourStatus({
   const [photoOpen, setPhotoOpen] = useState(false)
 
   if (gate === 'needs_signin') {
+    const early = signinOpens !== null && nowTime < signinOpens
     return (
       <div className="flex flex-wrap items-center gap-4 rounded-[14px] border border-[var(--tint-accent-line)] bg-tint-accent px-4 py-3.5 sm:px-5">
         <span aria-hidden className="flex size-10 shrink-0 items-center justify-center rounded-full bg-ink text-gold">
@@ -273,13 +278,19 @@ function YourStatus({
         </span>
         <div className="mr-auto min-w-0">
           <p className="text-[14px] font-medium text-text-primary">Your door is shut</p>
-          <p className="text-[13px] text-text-secondary">File your sign-in to enter the office. Until then you show as out.</p>
+          <p className="text-[13px] text-text-secondary">
+            {early
+              ? `Sign-in opens at ${signinOpens}. Until then you show as out.`
+              : 'File your sign-in to enter the office. Until then you show as out.'}
+          </p>
         </div>
-        <Link to="/reports" tabIndex={-1}>
-          <Button size="sm" className={TOUCH}>
-            File sign-in
-          </Button>
-        </Link>
+        {early ? null : (
+          <Link to="/reports" tabIndex={-1}>
+            <Button size="sm" className={TOUCH}>
+              File sign-in
+            </Button>
+          </Link>
+        )}
       </div>
     )
   }
@@ -452,6 +463,7 @@ export function Office() {
           door={me ? doorOf(me) : EMPTY_DOOR}
           today={clock.date}
           nowTime={clock.time}
+          signinOpens={settings ? hhmm(settings.signin_reminder) : null}
           doorsReady={!!statuses?.available}
           reasons={!!statuses?.reasons}
           dayStart={dayStart}
