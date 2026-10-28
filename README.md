@@ -33,7 +33,7 @@ All of this is done by hand; nothing here holds database credentials.
    - Realtime > Settings: leave "Allow public access" ON (the office channel is private and
      guarded by its own RLS).
 2. **Migrations**, in the SQL editor, each file as one run, in order:
-   `0001_team`, `0002_office_reports`, then `0004` to `0016`. **Leave `0003` for step 6.**
+   `0001_team`, `0002_office_reports`, then `0004` to `0018`. **Leave `0003` for step 6.**
    Each runs in a transaction and checks itself; a failure changes nothing.
 3. **Mr Tito** (0001's and 0002's headers):
    ```sql
@@ -84,12 +84,19 @@ back in progress. The giver (or an admin) can cancel a task that is not yet appr
   10 MB each), shown as thumbnails to the people on the task and the admins. Stored in the private
   `task-proof` bucket; an image uploaded but never handed in is removed by the alerts route after a day.
 
-## The day's hours, and work started before sign-in (0014, 0017)
+## The day's hours, and work started before sign-in (0014, 0017, 0018)
 
 Since 0017 the day is: sign-in from 09:00 (on time until 11:00), midday report 15:00 to 16:00,
 end-of-day report from 17:00 (on time until 19:00). Mr Tito's summary goes after 19:00, the time
 figures cover 09:00 to 19:00, and the leaderboard week closes Friday 19:00. Every screen and email
 reads these from `office_settings`; change them there.
+
+Since 0018 the times are hard limits at both ends of the day: sign-in cannot be filed before
+09:00, and the end-of-day report cannot be filed after 19:00 (19:00:59 still counts). An end of day
+not filed by then stays missed, and Mr Tito and HR are told as before; the member is not emailed
+to file it late, as they no longer can. A sign-in after 11:00 is still accepted and marked late, and
+the midday report is unchanged. To apply: run `0018_report_windows.sql` in the SQL editor, before
+or after the deploy (either order is safe). Rollback: `0018_report_windows.down.sql`.
 
 Nothing is recorded before someone files their sign-in. Someone who started earlier says so under
 **Your time in the office** ("I started before 09:00": a time and what on). Mr Tito sees it on the Day
@@ -187,7 +194,7 @@ The 10 minutes to "away" is in the screens (`src/lib/presence.ts`), not the data
 
 ## Rolling back
 
-`supabase/rollbacks/`, one per migration, **newest first** (0017 down to 0002). Each is one
+`supabase/rollbacks/`, one per migration, **newest first** (0018 down to 0002). Each is one
 transaction. 0002's and 0007's leave their storage buckets (`proof`, `avatars`): empty and delete
 them in Storage afterwards (Supabase refuses SQL deletes on storage tables).
 

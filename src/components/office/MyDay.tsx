@@ -33,7 +33,8 @@ import { useHasColumn } from '@/hooks/useHasColumn'
 
 /**
  * A member's day: sign-in, midday, end of day. Each card opens at its time and
- * stays fileable, marked late, after its deadline until midnight. Nothing here
+ * stays fileable, marked late, after its deadline until midnight; the end of
+ * day closes at its deadline (0018). Nothing here
  * decides on-time or late; submit_report() does, on the server's clock.
  */
 
@@ -219,7 +220,7 @@ function Checkpoint({
         <h2 id={`cp-${kind}`} className="mr-auto text-[15px] font-medium text-text-primary">
           {REPORT_LABEL[kind]}
         </h2>
-        <span className="tnum text-[12px] text-text-muted">{opens ? `${opens} to ${deadline}` : `By ${deadline}`}</span>
+        <span className="tnum text-[12px] text-text-muted">{opens} to {deadline}</span>
         <StatusChip state={state} />
       </div>
       {report ? (
@@ -228,6 +229,8 @@ function Checkpoint({
         </div>
       ) : state.state === 'open' || state.state === 'overdue' ? (
         <ReportForm kind={kind} date={date} overdue={state.state === 'overdue'} />
+      ) : state.state === 'missed' ? (
+        <p className="mt-3 text-[13px] text-text-secondary">Closed at {deadline}. It can no longer be filed today.</p>
       ) : null}
     </section>
     </div>

@@ -19,9 +19,9 @@ export const REPORT_LABEL: Record<ReportKind, string> = {
 /** Postgres `time` 'HH:MM:SS' to 'HH:MM'. */
 export const hhmm = (t: string): string => t.slice(0, 5)
 
-/** When a checkpoint opens (null: any time that day) and its on-time limit. */
-export function checkpointWindow(s: OfficeSettings, kind: ReportKind): { opens: string | null; deadline: string } {
-  if (kind === 'signin') return { opens: null, deadline: hhmm(s.signin_deadline) }
+/** When a checkpoint opens and its on-time limit. Sign-in opens at signin_reminder (0018). */
+export function checkpointWindow(s: OfficeSettings, kind: ReportKind): { opens: string; deadline: string } {
+  if (kind === 'signin') return { opens: hhmm(s.signin_reminder), deadline: hhmm(s.signin_deadline) }
   if (kind === 'midday') return { opens: hhmm(s.midday_opens), deadline: hhmm(s.midday_deadline) }
   return { opens: hhmm(s.eod_opens), deadline: hhmm(s.eod_deadline) }
 }
@@ -41,9 +41,11 @@ export type CheckpointState =
   | { state: 'filed'; timing: ReportTiming }
   | { state: 'upcoming'; opens: string }
   | { state: 'open'; deadline: string }
-  // Past the deadline, nothing filed. Still fileable (late) until midnight.
+  // Past the deadline, nothing filed. Still fileable (late) until midnight,
+  // except the end-of-day report, which closes at its deadline (0018).
   | { state: 'overdue'; deadline: string }
-  // A past day with nothing filed.
+  // Nothing filed and no longer fileable: a past day, or today's end of day
+  // after its deadline.
   | { state: 'missed' }
 
 /**
@@ -59,7 +61,8 @@ export function checkpointState(
   if (filed) return { state: 'filed', timing: filed }
   if (time === null) return { state: 'missed' }
   const { opens, deadline } = checkpointWindow(s, kind)
-  if (opens && time < opens) return { state: 'upcoming', opens }
+  if (time < opens) return { state: 'upcoming', opens }
   if (time <= deadline) return { state: 'open', deadline }
+  if (kind === 'eod') return { state: 'missed' }
   return { state: 'overdue', deadline }
 }
