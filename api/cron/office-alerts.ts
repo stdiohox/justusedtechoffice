@@ -10,10 +10,12 @@ import {
   officeDigest,
   officeMissedNudge,
   officeReminder,
+  weeklySummary,
   type BoardRow,
   type Email,
   type OfficeAlertLine,
   type RatingLine,
+  type WeekOfficeRow,
 } from '../_lib/templates.js'
 import { REPORT_KINDS, REPORT_LABEL, checkpointWindow, hhmm, isWorkday, takesProof } from '../../src/lib/office.js'
 import { localParts } from '../../src/lib/timezones.js'
@@ -36,19 +38,26 @@ import type {
  * Resend or Vercel outage loses emails, never the record.
  *
  * Everyone is emailed at their login address (profiles.email). Mr Tito
- * is office_settings.manager_id; his alerts and summary go to
+ * is office_settings.manager_id; his weekly summary goes to
  * OFFICE_MANAGER_EMAIL instead when that is set (his login stays as it is).
- * HR (profiles.role 'hr', active in the office, 0017) gets a copy of each
- * once his has gone; a copy that fails is reported, not retried.
+ *
+ * MR TITO GETS ONE SCHEDULED EMAIL A WEEK: the weekly summary, Friday after
+ * the EOD deadline (step 0). No report alerts, no day's summary, no
+ * leaderboard; all of that is in the summary. He is never sent reminders or
+ * nudges, even as an office member. His task and knock emails (api/office)
+ * are not scheduled and still come as they happen. HR (profiles.role 'hr',
+ * active in the office, 0017) still gets the alerts and the day's summary.
  *
  * ONE CALL, IN ORDER
- *   1. Flags not yet sent (missed, late, reused proof): one email to Mr Tito
+ *   0. The weekly summary to Mr Tito, Friday after the EOD deadline (Saturday
+ *      as a catch-up), on its own so nothing else in the run can stop it.
+ *   1. Flags not yet sent (missed, late, reused proof): one email to HR
  *      listing them, then notified_at. A missed checkpoint also emails the
  *      person who missed it.
  *   2. Reminders, once per checkpoint per day, to everyone due who has not
  *      filed: at the sign-in reminder, when midday opens, when EOD opens
  *      (office_settings; 11:00, 15:00 and 19:00 since 0014).
- *   3. The day's summary to Mr Tito, once, after the EOD deadline. Once
+ *   3. The day's summary to HR, once, after the EOD deadline. Once
  *      enforcement is on (office_settings.enforce_activity, 0008), each
  *      person's active time, sign-outs and missed check-ins for the day are
  *      in it too (office_time_summary, 0009). In trial mode they are not, and
@@ -57,9 +66,9 @@ import type {
  *
  * Steps 2-4 each claim a row in office_alert_log first, so overlapping runs
  * cannot send twice; a claim whose send failed is released for the next run
- * (for reminders: if any one person's failed). A missed-checkpoint email to
- * the member is sent once, after Mr Tito's alert; if it fails it is reported,
- * not retried.
+ * (for reminders and HR: if any one person's failed). A missed-checkpoint
+ * email to the member is sent once, after HR's alert; if it fails it is
+ * reported, not retried.
  * Every email also carries a Resend idempotency key, so a retry after a
  * timeout returns the first send instead of sending again. Any failure turns
  * the response 500 with the reason, which pg_net records.
@@ -147,15 +156,7 @@ async function send(ctx: Ctx, to: Person, email: Email, idempotencyKey: string):
   return true
 }
 
-async function toManager(ctx: Ctx, email: Email, key: string): Promise<boolean> {
-  if (!ctx.manager) {
-    ctx.problems.push(`${key}: no manager to email (set office_settings.manager_id to Mr Tito)`)
-    return false
-  }
-  return send(ctx, ctx.manager, email, key)
-}
-
-/** Copies for HR, after Mr Tito's has gone. False if any copy failed. */
+/** To HR (0017). False if any send failed; true when there is no HR. */
 async function toHr(ctx: Ctx, email: Email, key: string): Promise<boolean> {
   let ok = true
   for (const p of ctx.hr) ok = (await send(ctx, p, email, `${key}/hr/${p.id}`)) && ok
@@ -211,10 +212,11 @@ async function sendFlags(ctx: Ctx): Promise<void> {
   })
   // One key per exact set of flags: a retry of this batch is the same email.
   const batch = createHash('sha256').update(flags.map((f) => f.id).sort().join(',')).digest('hex').slice(0, 32)
+  // To HR only: Mr Tito has the week's flags in his Friday summary. A failed
+  // send leaves them unmarked for the next run; the idempotency key stops HR
+  // getting a batch twice.
   const alert = officeAlerts({ lines, reportsUrl: ctx.reportsUrl })
-  const ok = await toManager(ctx, alert, `office-flags/${batch}`)
-  if (!ok) return
-  await toHr(ctx, alert, `office-flags/${batch}`)
+  if (!(await toHr(ctx, alert, `office-flags/${batch}`))) return
 
   const { error: markErr } = await ctx.db
     .from('office_flags')
@@ -334,8 +336,9 @@ async function dayStarts(ctx: Ctx): Promise<Map<string, string>> {
   return out
 }
 
+/** To HR only: Mr Tito has the week in his Friday summary. No HR, nothing to send. */
 async function sendDigest(ctx: Ctx, due: OfficeRosterDay[], reports: OfficeReport[]): Promise<void> {
-  if (ctx.time <= hhmm(ctx.settings.eod_deadline)) return
+  if (ctx.time <= hhmm(ctx.settings.eod_deadline) || !ctx.hr.length) return
   const key = `digest:${ctx.date}`
   if (!(await claim(ctx.db, key))) return
   const activity = await dayActivity(ctx)
@@ -375,11 +378,7 @@ async function sendDigest(ctx: Ctx, due: OfficeRosterDay[], reports: OfficeRepor
     shortDayMinutes: ctx.settings.short_day_minutes ?? null,
   })
 
-  if (!(await toManager(ctx, email, `office-digest/${ctx.date}`))) {
-    await release(ctx.db, key)
-    return
-  }
-  await toHr(ctx, email, `office-digest/${ctx.date}`)
+  if (!(await toHr(ctx, email, `office-digest/${ctx.date}`))) await release(ctx.db, key)
 }
 
 /* ------------------------------------------------------- 4. leaderboard */
@@ -413,7 +412,8 @@ function weekLabel(zone: string, from: string, to: string): string {
  * tasks and reports), once, on
  * Friday after the end-of-day deadline (eod_deadline): each person on the board gets their place,
  * their numbers, the stars they were given and the top three (the winner, a
- * version that says so); Mr Tito and every admin get the whole table.
+ * version that says so); every manager and HR but Mr Tito gets the whole
+ * table (his is in the weekly summary).
  * Read before claiming: without 0012 there is nothing to send, and nothing
  * is claimed. A failed send releases the claim for the next run; Resend's
  * idempotency keys stop the people already emailed getting it twice.
@@ -445,7 +445,7 @@ async function sendLeaderboard(ctx: Ctx): Promise<void> {
       reports: r.reports_on_time,
     }))
 
-    // Addresses: everyone on the board, and every admin (the table).
+    // Addresses: everyone on the board but Mr Tito, and the managers and HR (the table).
     const { data: users, error: uErr } = await ctx.db
       .from('profiles')
       .select('id, full_name, email, role, deactivated_at')
@@ -475,7 +475,8 @@ async function sendLeaderboard(ctx: Ctx): Promise<void> {
     const sentBefore = ctx.sent.length
     for (const [k, r] of board.entries()) {
       const u = byId.get(r.user_id)
-      if (!u?.email) continue
+      // Mr Tito's place on the board is in his weekly summary.
+      if (!u?.email || r.user_id === ctx.settings.manager_id) continue
       const rank = 1 + rows.filter((x) => x.points > r.points).length
       const email = leaderboardPersonal({
         name: u.full_name,
@@ -491,10 +492,7 @@ async function sendLeaderboard(ctx: Ctx): Promise<void> {
       ok = (await send(ctx, { name: u.full_name, email: u.email }, email, `leaderboard/${ctx.date}/${r.user_id}`)) && ok
     }
 
-    // The whole table: Mr Tito (at OFFICE_MANAGER_EMAIL when set), then every other admin and HR.
-    if (ctx.manager) {
-      ok = (await send(ctx, ctx.manager, leaderboardTable({ name: ctx.manager.name, rows, week, boardUrl: ctx.boardUrl }), `leaderboard-table/${ctx.date}/manager`)) && ok
-    }
+    // The whole table, to every manager and HR but Mr Tito.
     for (const u of byId.values()) {
       if ((u.role !== 'manager' && u.role !== 'hr') || u.id === ctx.settings.manager_id || !u.email) continue
       ok = (await send(ctx, { name: u.full_name, email: u.email }, leaderboardTable({ name: u.full_name, rows, week, boardUrl: ctx.boardUrl }), `leaderboard-table/${ctx.date}/${u.id}`)) && ok
@@ -505,6 +503,171 @@ async function sendLeaderboard(ctx: Ctx): Promise<void> {
   } catch (err) {
     await release(ctx.db, key)
     ctx.problems.push(`leaderboard: ${err instanceof Error ? err.message : String(err)}`)
+  }
+}
+
+/* ------------------------------------------ 0. Mr Tito's weekly summary */
+
+const DAY_MS = 86_400_000
+/** A calendar date ('YYYY-MM-DD') plus n days. */
+const addDays = (date: string, n: number) => new Date(Date.parse(`${date}T00:00:00Z`) + n * DAY_MS).toISOString().slice(0, 10)
+/** "Sat 24 Oct" for a calendar date. */
+const dayLabel = (date: string) =>
+  new Date(`${date}T00:00:00Z`).toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short', timeZone: 'UTC' })
+
+/**
+ * Each person's reports over the work days from..to, and their activity
+ * once enforcement is on. If the activity cannot be read the summary still
+ * goes without it, and says why.
+ */
+async function officeWeek(ctx: Ctx, from: string, to: string): Promise<{ rows: WeekOfficeRow[]; reusedProof: string[] }> {
+  const { data: rosterRows, error: rosterErr } = await ctx.db.rpc('office_roster', { p_from: from, p_to: to })
+  if (rosterErr) throw new Error(`week roster failed: ${rosterErr.message}`)
+  const due = ((rosterRows ?? []) as OfficeRosterDay[]).filter((d) => d.expected && isWorkday(ctx.settings, d.work_date))
+
+  const { data: reportRows, error: repErr } = await ctx.db
+    .from('office_reports')
+    .select('user_id, work_date, kind, timing')
+    .gte('work_date', from)
+    .lte('work_date', to)
+  if (repErr) throw new Error(`week reports failed: ${repErr.message}`)
+  const filed = new Map(
+    ((reportRows ?? []) as Pick<OfficeReport, 'user_id' | 'work_date' | 'kind' | 'timing'>[]).map((r) => [`${r.user_id}|${r.work_date}|${r.kind}`, r.timing]),
+  )
+
+  const shortMin = ctx.settings.short_day_minutes ?? null
+  let activity: Map<string, { active: number; signouts: number; missed: number; short: number }> | null = null
+  if (ctx.settings.enforce_activity === true) {
+    const { data, error } = await ctx.db.rpc('office_time_summary', { p_from: from, p_to: to })
+    if (error) {
+      ctx.problems.push(
+        MISSING_FUNCTION.has(error.code ?? '')
+          ? 'weekly: enforcement is on but office_time_summary is missing (apply 0009); sent without activity'
+          : `weekly: activity not read (${error.message}); sent without it`,
+      )
+    } else {
+      activity = new Map()
+      for (const t of (data ?? []) as OfficeTimeDay[]) {
+        const a = activity.get(t.user_id) ?? { active: 0, signouts: 0, missed: 0, short: 0 }
+        a.active += t.active_min
+        a.signouts += t.signouts
+        a.missed += t.checkins_missed
+        if (shortMin && isShortDay(t, shortMin)) a.short++
+        activity.set(t.user_id, a)
+      }
+    }
+  }
+
+  const byUser = new Map<string, WeekOfficeRow>()
+  for (const d of due) {
+    const row = byUser.get(d.user_id) ?? { name: ctx.names.get(d.user_id) ?? 'Someone', onTime: 0, late: 0, notFiled: 0 }
+    for (const k of REPORT_KINDS) {
+      const timing = filed.get(`${d.user_id}|${d.work_date}|${k}`)
+      if (!timing) row.notFiled++
+      else if (timing === 'late') row.late++
+      else row.onTime++
+    }
+    byUser.set(d.user_id, row)
+  }
+  if (activity) {
+    for (const [uid, row] of byUser) {
+      // Someone with no row at all (never in) still gets a line: nothing recorded.
+      const a = activity.get(uid)
+      row.activity = {
+        active: fmtMinutes(a?.active ?? 0),
+        signouts: a?.signouts ?? 0,
+        missed: a?.missed ?? 0,
+        // 0010: only when Mr Tito has set a short day; absent otherwise, and the column with it.
+        short: shortMin ? (a?.short ?? 0) : undefined,
+      }
+    }
+  }
+
+  const { data: flagRows, error: flagErr } = await ctx.db
+    .from('office_flags')
+    .select('user_id, work_date, kind, detail')
+    .eq('flag', 'reused_proof')
+    .gte('work_date', from)
+    .lte('work_date', to)
+    .order('raised_at')
+  if (flagErr) throw new Error(`week flags failed: ${flagErr.message}`)
+  const reusedProof = ((flagRows ?? []) as Pick<OfficeFlag, 'user_id' | 'work_date' | 'kind' | 'detail'>[]).map(
+    (f) => `${ctx.names.get(f.user_id) ?? 'Someone'}, ${REPORT_LABEL[f.kind].toLowerCase()} on ${dayLabel(f.work_date)}${f.detail ? ` (${f.detail})` : ''}`,
+  )
+
+  return { rows: [...byUser.values()].sort((a, b) => a.name.localeCompare(b.name)), reusedProof }
+}
+
+/** The week that just closed, or null before 0012 (or on an error, reported). */
+async function weekBoard(ctx: Ctx): Promise<BoardRow[] | null> {
+  const { data, error } = await ctx.db.rpc('office_leaderboard', { p_weeks_ago: 1 })
+  if (error) {
+    if (!(error.code && NO_FUNCTION.has(error.code))) ctx.problems.push(`weekly leaderboard: ${error.message}`)
+    return null
+  }
+  return ((data ?? []) as BoardDbRow[]).map((r) => ({
+    name: r.full_name,
+    points: r.points,
+    tasks: r.tasks_done,
+    avgRating: r.avg_rating === null ? null : Number(r.avg_rating),
+    reports: r.reports_on_time,
+  }))
+}
+
+/**
+ * Friday after the EOD deadline (when the leaderboard week closes here), once.
+ * Saturday too, as a catch-up for a Friday evening the cron did not run: the
+ * key is the Friday's date, so only one can send.
+ *
+ * It covers the office days since the last summary, so a week whose summary
+ * never went is caught up, not lost. Problems met while building it are in
+ * the email as well as in the run's response. A failed send releases the
+ * claim for the next run; the idempotency key stops a retry sending twice.
+ */
+async function sendWeekly(ctx: Ctx): Promise<void> {
+  const local = localParts(ctx.settings.timezone, new Date())
+  const fridayEvening = local.weekday === 5 && local.time > hhmm(ctx.settings.eod_deadline)
+  if (!fridayEvening && local.weekday !== 6) return
+  const friday = local.weekday === 6 ? addDays(ctx.date, -1) : ctx.date
+  const key = `weekly:${friday}`
+  if (!ctx.manager) {
+    ctx.problems.push(`${key}: no manager to email (set office_settings.manager_id to Mr Tito)`)
+    return
+  }
+
+  // Read before claiming, so it is the last summary, not this one.
+  const { data: last, error: lastErr } = await ctx.db
+    .from('office_alert_log')
+    .select('sent_at')
+    .like('key', 'weekly:%')
+    .order('sent_at', { ascending: false })
+    .limit(1)
+    .maybeSingle()
+  if (lastErr) throw new Error(`weekly anchor: ${lastErr.message}`)
+  if (!(await claim(ctx.db, key))) return
+
+  try {
+    const since = last?.sent_at ? new Date(last.sent_at as string) : new Date(Date.now() - 7 * DAY_MS)
+    // Office days: the day after the last summary, through the Friday.
+    const from = addDays(localParts(ctx.settings.timezone, since).date, 1)
+    const problemsBefore = ctx.problems.length
+    const office = await officeWeek(ctx, from, friday)
+    const board = await weekBoard(ctx)
+    const email = weeklySummary({
+      name: ctx.manager.name,
+      week: `${dayLabel(from)} to ${dayLabel(friday)}`,
+      hours: `${hhmm(ctx.settings.signin_reminder)} and ${hhmm(ctx.settings.eod_deadline)}`,
+      ...office,
+      board,
+      problems: ctx.problems.slice(problemsBefore),
+      reportsUrl: ctx.reportsUrl,
+      boardUrl: ctx.boardUrl,
+      shortDayMinutes: ctx.settings.short_day_minutes ?? null,
+    })
+    if (!(await send(ctx, ctx.manager, email, `weekly/${friday}`))) await release(ctx.db, key)
+  } catch (err) {
+    await release(ctx.db, key)
+    ctx.problems.push(`weekly: ${err instanceof Error ? err.message : String(err)}`)
   }
 }
 
@@ -626,9 +789,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       boardUrl: `${base}/leaderboard`,
       from,
       names: new Map(members.map((m) => [m.user_id, m.user?.full_name ?? 'Someone'])),
+      // Never Mr Tito, even if he is an office member: his only scheduled
+      // email is the weekly summary.
       people: new Map(
         members
-          .filter((m) => m.active && m.user?.email && !m.user.deactivated_at)
+          .filter((m) => m.active && m.user?.email && !m.user.deactivated_at && m.user_id !== s.manager_id)
           .map((m) => [m.user_id, { name: m.user!.full_name, email: m.user!.email }]),
       ),
       manager,
@@ -637,6 +802,13 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         .map((m) => ({ id: m.user_id, name: m.user!.full_name, email: m.user!.email })),
       problems: [],
       sent: [],
+    }
+
+    // First, and on its own: nothing else in this run can stop his only email.
+    try {
+      await sendWeekly(ctx)
+    } catch (err) {
+      ctx.problems.push(`weekly: ${err instanceof Error ? err.message : String(err)}`)
     }
 
     await sendFlags(ctx)

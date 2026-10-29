@@ -149,7 +149,7 @@ export interface OfficeAlertLine {
   what: string
 }
 
-/** Missed, late and reused-proof alerts, batched into one email to Mr Tito. */
+/** Missed, late and reused-proof alerts, batched into one email to HR (Mr Tito has them weekly). */
 export function officeAlerts(i: { lines: OfficeAlertLine[]; reportsUrl: string }): Email {
   i = { ...i, lines: i.lines.map((l) => ({ ...l, who: cleanName(l.who) })) }
   const n = i.lines.length
@@ -182,7 +182,7 @@ export interface OfficeDigestRow {
   early?: string
 }
 
-/** The day's summary for Mr Tito, after the EOD deadline. */
+/** The day's summary for HR, after the EOD deadline (Mr Tito has the week on Friday). */
 export function officeDigest(i: {
   /** The working window, "11:00 and 20:30" (office_settings). */
   hours: string
@@ -363,7 +363,7 @@ export function leaderboardPersonal(i: {
   }
 }
 
-/** Friday, to Mr Tito and the admins: the whole table. */
+/** Friday, to the managers and HR: the whole table (Mr Tito's is in his weekly summary). */
 export function leaderboardTable(i: { name: string; rows: BoardRow[]; week: string; boardUrl: string }): Email {
   const rows = i.rows.map((r) => ({ ...r, name: cleanName(r.name) }))
   const winner = rows[0] && rows[0].points > 0 ? rows[0] : null
@@ -390,6 +390,123 @@ export function leaderboardTable(i: { name: string; rows: BoardRow[]; week: stri
       `${POINTS_NOTE} Everyone on the team sees this table.`,
       '',
       `Open the leaderboard: ${i.boardUrl}`,
+    ].join('\n'),
+  }
+}
+
+/* ------------------------------------------------- Mr Tito's week (Friday) */
+
+/** "Hazel", or "Mr Tito" when the name starts with a title. */
+const greetingName = (full: string) => {
+  const parts = cleanName(full).split(' ')
+  return /^(mr|mrs|ms|miss|dr|engr|chief|prof)\.?$/i.test(parts[0] ?? '') && parts[1] ? `${parts[0]} ${parts[1]}` : firstNameOf(full)
+}
+
+/** One person's week: their reports, and their activity once enforced. */
+export interface WeekOfficeRow {
+  name: string
+  onTime: number
+  late: number
+  notFiled: number
+  /** short: short days (0010), only when Mr Tito has set a short day. */
+  activity?: { active: string; signouts: number; missed: number; short?: number }
+}
+
+/**
+ * Mr Tito's only scheduled email: once a week, Friday after the end-of-day
+ * deadline. It replaces the report alerts, the day's summary and his copy of
+ * the leaderboard (HR still gets the alerts and the day's summary). Sent even
+ * on a quiet week: a system that goes quiet cannot be told from a broken one.
+ */
+export function weeklySummary(i: {
+  name: string
+  /** "Sat 24 Oct to Fri 30 Oct" */
+  week: string
+  /** The working window, "09:00 and 19:00" (office_settings). */
+  hours: string
+  rows: WeekOfficeRow[]
+  reusedProof: string[]
+  /** The week's leaderboard, or null when it could not be read. */
+  board: BoardRow[] | null
+  /** Problems met while building it, so none is silent. */
+  problems: string[]
+  reportsUrl: string
+  boardUrl: string
+  shortDayMinutes?: number | null
+}): Email {
+  const rows = i.rows.map((r) => ({ ...r, name: cleanName(r.name) }))
+  const board = i.board?.map((r) => ({ ...r, name: cleanName(r.name) })) ?? null
+  const reused = i.reusedProof.map((s) => cleanName(s, 160))
+  const heading = (t: string, tone = INK) =>
+    `    <p style="margin:24px 0 8px;font-size:13px;letter-spacing:0.06em;text-transform:uppercase;color:${tone};font-weight:800;">${esc(t)}</p>\n`
+  const list = (items: string[]) =>
+    `    <ul style="margin:0 0 8px;padding-left:18px;">${items.map((s) => `<li style="margin:0 0 4px;">${esc(s)}</li>`).join('')}</ul>\n`
+
+  const filed = rows.reduce((n, r) => n + r.onTime + r.late, 0)
+  const due = rows.reduce((n, r) => n + r.onTime + r.late + r.notFiled, 0)
+  const head = due ? `${filed} of ${due} reports filed this week.` : 'Nobody was due to report this week.'
+  const withActivity = rows.some((r) => r.activity)
+  const withShort = rows.some((r) => r.activity?.short !== undefined)
+  const td = (s: string, style = '') => `<td style="padding:6px 10px 6px 0;border-top:1px solid ${RULE};font-size:14px;${style}">${esc(s)}</td>`
+  const num = (n: number | undefined) => td(n === undefined ? '-' : String(n))
+  const table = rows.length
+    ? `    <table role="presentation" cellpadding="0" cellspacing="0" border="0" style="margin:0 0 18px;border-collapse:collapse;">
+      <tr>${['', 'On time', 'Late', 'Not filed', ...(withActivity ? ['Active', 'Sign-outs', 'Missed check-ins'] : []), ...(withShort ? ['Short days'] : [])]
+        .map((h) => `<td style="padding:0 10px 6px 0;font-size:12px;color:${MUTED};text-transform:uppercase;letter-spacing:0.06em;">${h}</td>`)
+        .join('')}</tr>
+${rows
+  .map(
+    (r) =>
+      `      <tr>${td(r.name, 'font-weight:600;')}${td(String(r.onTime))}${td(String(r.late), r.late ? `color:${WARNING};` : '')}${td(String(r.notFiled), r.notFiled ? `color:${DANGER};font-weight:600;` : '')}${
+        withActivity ? `${td(r.activity?.active ?? '-')}${num(r.activity?.signouts)}${num(r.activity?.missed)}` : ''
+      }${withShort ? num(r.activity?.short) : ''}</tr>`,
+  )
+  .join('\n')}
+    </table>\n`
+    : ''
+  const shortHours = i.shortDayMinutes ? `${Math.round((i.shortDayMinutes / 60) * 10) / 10} hours` : null
+  const activityNote = withActivity
+    ? `Active is time with input in the office between ${i.hours}, added up over the week. Sign-outs count those after 30 minutes away or with the office closed.${
+        withShort && shortHours ? ` A short day is a signed-in day with under ${shortHours} of working time.` : ''
+      } The day by day detail is in Reports.`
+    : null
+  const winner = board?.[0] && board[0].points > 0 ? board[0] : null
+  const boardHead = !board ? null : winner ? `${winner.name} topped the leaderboard with ${winner.points} points.` : 'Nobody scored this week.'
+
+  const html =
+    p(`Hi ${esc(greetingName(i.name))},`) +
+    p(`Here is the week at JustUsedTech, ${esc(i.week)}.`) +
+    heading('Reports') +
+    p(esc(head)) +
+    table +
+    (activityNote ? p(`<span style="color:${MUTED};font-size:13px;">${esc(activityNote)}</span>`) : '') +
+    (reused.length ? heading(`Proof reused (${reused.length})`, WARNING) + list(reused) : '') +
+    link(i.reportsUrl, 'Open Reports') +
+    (board ? heading('Leaderboard') + p(esc(boardHead!)) + (board.length ? boardTable(board) : '') + link(i.boardUrl, 'Open the leaderboard') : '') +
+    (i.problems.length ? heading(`Problems to look at (${i.problems.length})`, DANGER) + list(i.problems) : '')
+
+  const activityText = (r: WeekOfficeRow) =>
+    r.activity
+      ? ` · active ${r.activity.active} · ${r.activity.signouts} ${r.activity.signouts === 1 ? 'sign-out' : 'sign-outs'} · ${r.activity.missed} missed ${r.activity.missed === 1 ? 'check-in' : 'check-ins'}${r.activity.short !== undefined ? ` · ${r.activity.short} short ${r.activity.short === 1 ? 'day' : 'days'}` : ''}`
+      : ''
+  return {
+    // A fixed subject: names are self-edited, and this goes out from the office's address.
+    subject: `JustUsedTech this week, ${i.week}`,
+    html: shell(html),
+    text: [
+      `Hi ${greetingName(i.name)},`,
+      '',
+      `Here is the week at JustUsedTech, ${i.week}.`,
+      '',
+      'REPORTS',
+      head,
+      ...rows.map((r) => `${r.name}: on time ${r.onTime} · late ${r.late} · not filed ${r.notFiled}${activityText(r)}`),
+      ...(activityNote ? ['', activityNote] : []),
+      ...(reused.length ? ['', `Proof reused (${reused.length}):`, ...reused.map((s) => `  - ${s}`)] : []),
+      '',
+      `Open Reports: ${i.reportsUrl}`,
+      ...(board ? ['', 'LEADERBOARD', boardHead!, ...boardText(board), '', `Open the leaderboard: ${i.boardUrl}`] : []),
+      ...(i.problems.length ? ['', `Problems to look at (${i.problems.length}):`, ...i.problems.map((s) => `  - ${s}`)] : []),
     ].join('\n'),
   }
 }
