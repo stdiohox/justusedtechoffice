@@ -37,6 +37,31 @@ export function localParts(zone: string, at: Date): LocalParts {
   }
 }
 
+/** "4:04 PM": what a clock in `zone` reads at `at`, 12-hour. */
+export const clock12 = (zone: string, at: Date): string =>
+  at.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', timeZone: zone })
+
+/** "Thu 29 Oct" in `zone`. */
+export const shortDay = (zone: string, at: Date): string =>
+  at.toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short', timeZone: zone })
+
+/**
+ * This browser's timezone when its clock reads differently from `zone` at
+ * `at` (Mr Tito in the US), else null: someone in Lagos needs no second time.
+ */
+export function viewerZone(zone: string, at: Date): string | null {
+  let mine: string | undefined
+  try {
+    mine = Intl.DateTimeFormat().resolvedOptions().timeZone
+  } catch {
+    return null
+  }
+  if (!mine) return null
+  const office = localParts(zone, at)
+  const here = localParts(mine, at)
+  return office.date === here.date && office.time === here.time ? null : mine
+}
+
 /** 'YYYY-MM-DD' plus n calendar days. Calendar arithmetic, so DST cannot skew it. */
 export function addDays(date: string, n: number): string {
   const [y, m, d] = date.split('-').map(Number)

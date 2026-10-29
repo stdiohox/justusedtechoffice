@@ -11,7 +11,7 @@ import { useNow } from '@/hooks/useNow'
 import { titleOf } from '@/lib/constants'
 import { hhmm } from '@/lib/office'
 import { mapStatus, type MapStatus } from '@/lib/presence'
-import { localParts, wallTimeToInstant } from '@/lib/timezones'
+import { clock12, localParts, shortDay, viewerZone, wallTimeToInstant } from '@/lib/timezones'
 import { doorView, steppedOut, EMPTY_DOOR, type DoorView } from '@/lib/door'
 import { useOfficeStatusRealtime, useOfficeStatuses } from '@/hooks/useOfficeStatus'
 import { DeskEditor, DoorNote } from '@/components/office/Doors'
@@ -58,8 +58,11 @@ function Room({
   index: number
   door: DoorView
   today: string
-  /** Mr Tito only (0008): "Signed out 11:42 · idle" when they are out after a stay. */
-  signedOut?: string | null
+  /**
+   * Mr Tito and HR only (0008): "Signed out Thu 29 Oct, 4:04 PM · idle" when they
+   * are out after a stay, and the same instant on the viewer's clock when it differs.
+   */
+  signedOut?: { office: string; yours: string | null } | null
 }) {
   const name = member.user?.full_name ?? 'Former member'
   const inRoom = status !== 'offline'
@@ -87,7 +90,10 @@ function Room({
       </div>
       <DoorNote view={door} today={today} />
       {signedOut && status === 'offline' ? (
-        <p className="tnum mt-2 text-[12px] text-[rgba(246,250,247,0.70)]">{signedOut}</p>
+        <p className="tnum mt-2 text-[12px] text-[rgba(246,250,247,0.70)]">
+          {signedOut.office}
+          {signedOut.yours ? <span className="block">{signedOut.yours}</span> : null}
+        </p>
       ) : null}
       <div className="mt-auto flex flex-wrap items-center gap-2 pt-4">
         <span className="mr-auto">
@@ -351,6 +357,8 @@ export function Office() {
   const zone = settings?.timezone ?? 'Africa/Lagos'
   const clock = localParts(zone, new Date(now))
   const weekday = new Date(now).toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long', timeZone: zone })
+  // Mr Tito works from the US: times also read on his own clock when it differs.
+  const yourZone = viewerZone(zone, new Date(now))
   // 0006: doors. Hidden until the migration is in.
   const inOffice = gate === 'in' && role.isMember
   const { data: statuses } = useOfficeStatuses(inOffice)
@@ -385,28 +393,43 @@ export function Office() {
   }
 
   const active = (members ?? []).filter((m) => m.active && !m.user?.deactivated_at)
-  // The manager's office first, then everyone else by name.
-  const rooms = [...active].sort((a, b) =>
-    a.user_id === settings?.manager_id ? -1 : b.user_id === settings?.manager_id ? 1 : 0,
-  )
   const statusOf = (id: string): MapStatus =>
     // Your own room reads from this tab, which knows before the channel echoes.
     id === profile?.id && mine ? mine : mapStatus(present[id] ?? null, seen[id], now)
-  const inCount = rooms.filter((m) => statusOf(m.user_id) !== 'offline').length
   const me = profile?.id
+  // A room only for someone who has signed in today. Mr Tito and HR read
+  // today's stays (0008), so whoever signed in and left keeps a room with
+  // when they left; everyone else can only see who is in now. Yours and the
+  // manager's office are always there.
+  const signedInToday = new Set((entries?.available ? entries.rows : []).map((e) => e.user_id))
+  const hasRoom = (id: string) =>
+    id === me || id === settings?.manager_id || statusOf(id) !== 'offline' || signedInToday.has(id)
+  // The manager's office first, then everyone else by name.
+  const rooms = active
+    .filter((m) => hasRoom(m.user_id))
+    .sort((a, b) => (a.user_id === settings?.manager_id ? -1 : b.user_id === settings?.manager_id ? 1 : 0))
+  const inCount = rooms.filter((m) => statusOf(m.user_id) !== 'offline').length
   const between = (k: Knock, other: string) =>
     (k.from_user === me && k.to_user === other) || (k.to_user === me && k.from_user === other)
   // Only a knock that was let in has a chat; anything else in ?chat= is dropped.
   const chatKnock = knocks?.find((k) => k.id === chatId && k.status === 'accepted')
   const chatWith = chatKnock ? (chatKnock.from_user === me ? chatKnock.to_user : chatKnock.from_user) : null
-  const nameOf = (id: string) => rooms.find((m) => m.user_id === id)?.user?.full_name ?? 'Someone'
+  const nameOf = (id: string) => active.find((m) => m.user_id === id)?.user?.full_name ?? 'Someone'
   const today = { date: clock.date, time: clock.time }
   const doorOf = (id: string): DoorView =>
     statuses?.available ? doorView(statuses.rows.find((r) => r.user_id === id), today) : EMPTY_DOOR
-  const signedOutOf = (id: string): string | null => {
+  const signedOutOf = (id: string): { office: string; yours: string | null } | null => {
     const last: OfficeEntry | undefined = (entries?.rows ?? []).filter((e) => e.user_id === id).at(-1)
     if (!last?.left_at || !last.left_reason) return null
-    return `Signed out ${localParts(zone, new Date(last.left_at)).time} · ${LEFT_SHORT[last.left_reason]}`
+    const at = new Date(last.left_at)
+    const when = `${shortDay(zone, at)}, ${clock12(zone, at)}`
+    if (!yourZone) return { office: `Signed out ${when} · ${LEFT_SHORT[last.left_reason]}`, yours: null }
+    // The date too when the viewer's clock is on another day.
+    const theirDay = localParts(yourZone, at).date !== localParts(zone, at).date ? `${shortDay(yourZone, at)}, ` : ''
+    return {
+      office: `Signed out ${when} office time · ${LEFT_SHORT[last.left_reason]}`,
+      yours: `${theirDay}${clock12(yourZone, at)} your time`,
+    }
   }
   const doorFor = (m: OfficeMemberWithUser) => {
     if (m.user_id === me) return null
@@ -445,14 +468,15 @@ export function Office() {
         <div className="mr-auto min-w-0">
           <h1 className="font-display text-[28px] leading-none font-medium text-text-primary">The office</h1>
           <p className="tnum mt-1.5 text-[12px] text-text-muted">
-            {weekday} · {clock.time} office time
+            {weekday} · {clock12(zone, new Date(now))} office time
+            {yourZone ? ` · ${clock12(yourZone, new Date(now))} your time` : null}
           </p>
         </div>
         {gate === 'in' ? (
           <p className="flex items-center gap-2 pb-0.5 text-[13px] text-text-secondary" role="status">
             <span aria-hidden className="size-2 rounded-full bg-state-success" />
             <span className="tnum">
-              {inCount} of {rooms.length} in
+              {inCount} of {active.length} in
             </span>
           </p>
         ) : null}
