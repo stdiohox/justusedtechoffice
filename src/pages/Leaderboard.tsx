@@ -62,7 +62,7 @@ function Medal({ rank, points }: { rank: number; points: number }) {
 function Table({ rows, me, caption }: { rows: LeaderboardRow[]; me: string; caption: string }) {
   const num = 'tnum px-3 py-2.5 text-right'
   return (
-    <div className="hairline overflow-x-auto rounded-[14px] bg-surface-raised" role="region" aria-label="Leaderboard table (scrolls sideways)" tabIndex={0}>
+    <div className="hairline relative overflow-x-auto rounded-[14px] bg-surface-raised" role="region" aria-label="Leaderboard table (scrolls sideways)" tabIndex={0}>
       <table className="w-full min-w-[480px] text-[13px]">
         <caption className="sr-only">{caption}</caption>
         <thead>

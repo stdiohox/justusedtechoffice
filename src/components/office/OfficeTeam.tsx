@@ -213,7 +213,7 @@ export function OfficeTeam({ settings, members }: { settings: OfficeSettings; me
           In the office
         </h2>
         {members.length ? (
-          <div className="overflow-x-auto">
+          <div className="relative overflow-x-auto">
             <table className="w-full min-w-[760px] text-left text-[13px]">
               <thead>
                 <tr className="hairline-b text-[11px] tracking-[0.08em] text-text-muted uppercase">

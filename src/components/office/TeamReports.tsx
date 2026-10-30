@@ -296,7 +296,7 @@ export function MemberWeek({
       ) : isError ? (
         <EmptyState title="Could not load the week" body={error instanceof Error ? error.message : 'Try again in a moment.'} />
       ) : (
-        <div className="hairline overflow-x-auto rounded-[14px] bg-surface-raised shadow-[var(--shadow-sm)]">
+        <div className="hairline relative overflow-x-auto rounded-[14px] bg-surface-raised shadow-[var(--shadow-sm)]">
           <table className="w-full min-w-[560px] text-left text-[13px]">
             <thead>
               <tr className="hairline-b bg-surface-sunken/60 text-[11px] tracking-[0.08em] text-text-muted uppercase">
@@ -404,7 +404,7 @@ function WeekTime({
         role="region"
         aria-labelledby="week-time-h"
         tabIndex={0}
-        className="hairline overflow-x-auto rounded-[14px] bg-surface-raised shadow-[var(--shadow-sm)]"
+        className="hairline relative overflow-x-auto rounded-[14px] bg-surface-raised shadow-[var(--shadow-sm)]"
       >
         <table aria-labelledby="week-time-h" className="tnum w-full min-w-[760px] text-left text-[13px]">
           <thead>

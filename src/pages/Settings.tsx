@@ -148,7 +148,7 @@ function PendingInvites() {
             <Mail size={14} strokeWidth={1.75} aria-hidden className="text-text-muted" />
             <span className="font-semibold text-text-primary">{i.full_name}</span>
             {i.job_title ? <span className="text-text-secondary">{i.job_title}</span> : null}
-            <span className="text-text-secondary">{i.email}</span>
+            <span className="min-w-0 wrap-anywhere text-text-secondary">{i.email}</span>
             <span className="tnum text-text-muted">invited {new Date(i.created_at).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}</span>
             <span className="ml-auto flex gap-1">
               <Button
@@ -299,7 +299,7 @@ function TeamTable({ titles }: { titles: boolean }) {
   if (isLoading) return <Skeleton className="h-[160px]" />
   if (isError) return <EmptyState title="Could not load the team" body={error instanceof Error ? error.message : 'Try again in a moment.'} />
   return (
-    <div className="overflow-x-auto" role="region" aria-label="Team table (scrolls sideways)" tabIndex={0}>
+    <div className="relative overflow-x-auto" role="region" aria-label="Team table (scrolls sideways)" tabIndex={0}>
       <table className="w-full min-w-[720px] text-left text-[13px]">
         <thead>
           <tr className="hairline-b text-[11px] tracking-[0.08em] text-text-muted uppercase">

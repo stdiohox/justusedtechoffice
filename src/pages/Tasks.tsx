@@ -59,7 +59,8 @@ import type { OfficeTask, OfficeTaskEvent, TaskStatus } from '@/types/database'
  */
 
 type Tab = 'mine' | 'personal' | 'given' | 'all'
-/** Four tabs fit a 390px phone at 84px each; three keep the wider 92px. */
+/** Four tabs fit a 390px phone at 84px each; three keep the wider 92px. Narrower
+ *  screens shrink the bar and the tabs share it equally (320px phones). */
 const tabWidth = (n: number) => (n > 3 ? 84 : 92)
 
 const CHIP = 'inline-flex items-center rounded-[8px] px-2 py-[3px] text-[11px] font-medium whitespace-nowrap'
@@ -1125,7 +1126,9 @@ function Tabs({ tabs, tab, onTab }: { tabs: { id: Tab; label: string }[]; tab: T
     <div
       role="tablist"
       aria-label="Which tasks"
-      className="relative flex h-9 rounded-[14px] border border-line bg-surface-sunken p-[3px] max-sm:h-[52px]"
+      className="relative flex h-9 max-w-full rounded-[14px] border border-line bg-surface-sunken p-[3px] max-sm:h-[52px]"
+      // The tabs' width plus the 3px padding and 1px border on each side.
+      style={{ width: tabs.length * width + 8 }}
       onKeyDown={(e) => {
         // The ARIA tab pattern: arrows move between tabs, Home/End jump.
         const next =
@@ -1143,7 +1146,7 @@ function Tabs({ tabs, tab, onTab }: { tabs: { id: Tab; label: string }[]; tab: T
       <span
         aria-hidden
         className="seg-thumb absolute top-[3px] bottom-[3px] left-[3px] rounded-[10px] bg-surface-raised shadow-[var(--shadow-sm)]"
-        style={{ width, transform: `translateX(${i * width}px)` }}
+        style={{ width: `calc((100% - 6px) / ${tabs.length})`, transform: `translateX(${i * 100}%)` }}
       />
       {tabs.map((t) => (
         <button
@@ -1155,9 +1158,8 @@ function Tabs({ tabs, tab, onTab }: { tabs: { id: Tab; label: string }[]; tab: T
           aria-controls="tasks-panel"
           tabIndex={tab === t.id ? 0 : -1}
           onClick={() => onTab(t.id)}
-          style={{ width }}
           className={cn(
-            'relative rounded-[10px] text-[13px] font-medium transition-colors duration-150',
+            'relative min-w-0 flex-1 rounded-[10px] text-[13px] font-medium transition-colors duration-150',
             tab === t.id ? 'font-semibold text-text-primary' : 'text-text-muted hover:text-text-primary',
           )}
         >

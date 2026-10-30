@@ -160,7 +160,7 @@ export function AttendanceMonth({ settings, userId, name }: { settings: OfficeSe
             role="region"
             aria-label={`${name}’s days, ${monthLabel(first)}`}
             tabIndex={0}
-            className="hairline overflow-x-auto rounded-[14px] bg-surface-raised shadow-[var(--shadow-sm)]"
+            className="hairline relative overflow-x-auto rounded-[14px] bg-surface-raised shadow-[var(--shadow-sm)]"
           >
             <table className="w-full min-w-[340px] table-fixed text-[12px]">
               <caption className="sr-only">
