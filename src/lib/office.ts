@@ -37,6 +37,9 @@ export function isWorkday(s: OfficeSettings, date: string): boolean {
   return s.workdays.includes(d === 0 ? 7 : d)
 }
 
+/** A day off (a weekend) on which reports may still be filed, optionally (0019). Nothing is due. */
+export const isOptionalDay = (s: OfficeSettings, date: string): boolean => !!s.weekend_reports && !isWorkday(s, date)
+
 export type CheckpointState =
   | { state: 'filed'; timing: ReportTiming }
   | { state: 'upcoming'; opens: string }

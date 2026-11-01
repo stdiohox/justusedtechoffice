@@ -10,8 +10,8 @@
  * must stay true of the code; if the office starts recording something new,
  * the notice changes first.
  */
-/** 2 (0011): tasks. 3 (0012, 0013): stars, images and the weekly leaderboard. 4 (0014): a start before sign-in, if you say one. 5 (0015): tasks you give yourself, and edits to tasks. 6 (0017): Emmanuella (HR) sees what Mr Tito sees. */
-export const NOTICE_VERSION = 6
+/** 2 (0011): tasks. 3 (0012, 0013): stars, images and the weekly leaderboard. 4 (0014): a start before sign-in, if you say one. 5 (0015): tasks you give yourself, and edits to tasks. 6 (0017): Emmanuella (HR) sees what Mr Tito sees. 7 (0019): optional weekend reports, which the leaderboard does not count. */
+export const NOTICE_VERSION = 7
 
 export const NOTICE_TITLE = 'How the office records your time'
 
@@ -32,7 +32,8 @@ export const NOTICE: NoticeSection[] = [
       'Your presence and time are not recorded before you file your sign-in. If you started earlier, you can say when, and why; it is kept as said by you.',
       'Tasks the team gives each other, and tasks you give yourself: what the task is, who gave it to whom, its due date, when it was started, done, approved, sent back, edited, moved to someone else or cancelled, by whom, what an edit changed, and the notes and links added along the way.',
       'The 1 to 5 stars and the comment given on an approved task, and any images handed in with it.',
-      'A weekly leaderboard, Friday to Friday: for each person, the tasks approved (with their stars) and the reports filed on time. It does not count tasks you give yourself, time in the office, sign-in times or activity.',
+      'Reports are due Monday to Friday. You may also file them on a weekend if you work then: they are optional, never marked missed, and recorded like any other report.',
+      'A weekly leaderboard, Friday to Friday: for each person, the tasks approved (with their stars) and the reports filed on time on workdays. It does not count weekend reports, tasks you give yourself, time in the office, sign-in times or activity.',
     ],
   },
   {

@@ -60,6 +60,8 @@ export interface OfficeSettings {
   enforce_activity?: boolean
   /** 0010. Working minutes under which a signed-in day is "short"; null is off. Absent until applied. */
   short_day_minutes?: number | null
+  /** 0019. Reports may be filed, optionally, on days off (weekends). Absent until applied. */
+  weekend_reports?: boolean
 }
 
 /** office_onboarding_status() (0010): one member's first steps. */

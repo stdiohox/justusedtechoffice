@@ -8,10 +8,16 @@ import { LinkList } from '@/components/office/Links'
 
 const CHIP = 'inline-flex items-center rounded-[8px] px-2 py-[3px] text-[11px] font-medium whitespace-nowrap'
 
-/** One vocabulary for a checkpoint's state, on both the member's and Mr Tito's screens. */
-export function StatusChip({ state, className }: { state: CheckpointState; className?: string }) {
+/**
+ * One vocabulary for a checkpoint's state, on both the member's and Mr Tito's
+ * screens. `optional`: a day nothing is due (a weekend, 0019), so a report not
+ * filed is plain, never red.
+ */
+export function StatusChip({ state, optional, className }: { state: CheckpointState; optional?: boolean; className?: string }) {
   const [text, tone] =
-    state.state === 'filed'
+    optional && (state.state === 'overdue' || state.state === 'missed')
+      ? [state.state === 'overdue' ? 'Late now' : 'Not filed', 'bg-surface-sunken text-text-secondary']
+      : state.state === 'filed'
       ? state.timing === 'on_time'
         ? ['On time', 'bg-tint-brand text-state-success']
         : // Primary text, not state-warning: warning on its own tint is

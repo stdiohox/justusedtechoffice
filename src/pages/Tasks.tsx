@@ -22,6 +22,7 @@ import {
   useReviewTask,
   useStartTask,
   useTaskEvents,
+  usePastTasks,
   useTasks,
 } from '@/hooks/useTasks'
 import { useAuthStore } from '@/stores/authStore'
@@ -1181,6 +1182,18 @@ function returnFocus(e: Event, taskId: string, fallback: RefObject<HTMLButtonEle
   ;(row ?? fallback.current)?.focus()
 }
 
+/** Closed tasks by the office day they closed, newest day first; already newest first within it. */
+function groupByDay(rows: OfficeTask[], zone: string): { date: string; tasks: OfficeTask[] }[] {
+  const days: { date: string; tasks: OfficeTask[] }[] = []
+  for (const t of rows) {
+    const date = localParts(zone, new Date(t.closed_at ?? t.updated_at)).date
+    const last = days[days.length - 1]
+    if (last?.date === date) last.tasks.push(t)
+    else days.push({ date, tasks: [t] })
+  }
+  return days
+}
+
 export function Tasks() {
   const userId = useAuthStore((s) => s.profile?.id) ?? ''
   const admin = useIsTaskAdmin()
@@ -1196,6 +1209,8 @@ export function Tasks() {
   // ?task=<id> opens one task: the pop-ups link here.
   const [params, setParams] = useSearchParams()
   const openId = params.get('task')
+  // Read when opened, or when a link points at a task older than the main list holds.
+  const past = usePastTasks(showClosed || (!!openId && !!data?.available && !data.rows.some((t) => t.id === openId)))
 
   const today = localParts(settings?.timezone ?? 'Africa/Lagos', new Date()).date
   // "…" until the team is in, so nobody shows as a former member for a moment.
@@ -1235,12 +1250,12 @@ export function Tasks() {
   ]
   const current = tabs.some((t) => t.id === tab) ? tab : 'mine'
   // Personal tasks (0015) have their own tab: For me and I gave hold tasks between two people.
-  const inTab = data.rows.filter((t) =>
+  const inCurrent = (t: OfficeTask) =>
     current === 'mine' ? t.assigned_to === userId && !isPersonal(t)
     : current === 'personal' ? t.assigned_to === userId && isPersonal(t)
     : current === 'given' ? t.assigned_by === userId && !isPersonal(t)
-    : true,
-  )
+    : true
+  const inTab = data.rows.filter(inCurrent)
   const progress =
     current === 'personal'
       ? {
@@ -1250,9 +1265,11 @@ export function Tasks() {
         }
       : null
   const live = sortTasks(inTab.filter((t) => !isClosed(t)), userId)
-  const closed = sortTasks(inTab.filter(isClosed), userId)
+  // Past tasks: the full history once opened, grouped by the day each closed (office calendar).
+  const pastDays = groupByDay((past.data ?? []).filter(inCurrent), settings?.timezone ?? 'Africa/Lagos')
+  const pastCount = past.data ? pastDays.reduce((n, d) => n + d.tasks.length, 0) : null
   const waitingOnMe = data.rows.filter((t) => needsMe(t, userId)).length
-  const opened = openId ? data.rows.find((t) => t.id === openId) : undefined
+  const opened = openId ? (data.rows.find((t) => t.id === openId) ?? past.data?.find((t) => t.id === openId)) : undefined
   const open = (id: string | null) =>
     setParams(
       (p) => {
@@ -1305,25 +1322,46 @@ export function Tasks() {
           <EmptyState icon={<ListChecks size={22} strokeWidth={1.5} />} title={empty.title} body={empty.body} />
         )}
 
-        {closed.length ? (
-          <div className="mt-6">
-            <button
-              type="button"
-              aria-expanded={showClosed}
-              onClick={() => setShowClosed((s) => !s)}
-              className={cn('text-[13px] font-medium text-text-secondary hover:text-text-primary', TOUCH)}
-            >
-              {showClosed ? 'Hide' : 'Show'} {current === 'personal' ? 'done' : 'approved'} and cancelled ({closed.length})
-            </button>
-            {showClosed ? (
-              <ul className="mt-3 space-y-3">
-                {closed.map((t) => (
-                  <TaskRow key={t.id} task={t} today={today} userId={userId} tab={current} nameOf={nameOf} onOpen={() => open(t.id)} />
-                ))}
-              </ul>
-            ) : null}
-          </div>
-        ) : null}
+        <div className="mt-6">
+          <button
+            type="button"
+            aria-expanded={showClosed}
+            aria-describedby="past-tasks-hint"
+            onClick={() => setShowClosed((s) => !s)}
+            className={cn('text-[13px] font-medium text-text-secondary hover:text-text-primary', TOUCH)}
+          >
+            {showClosed ? 'Hide' : 'Show'} past tasks{showClosed && pastCount !== null ? ` (${pastCount})` : ''}
+          </button>
+          <p id="past-tasks-hint" className="mt-0.5 text-[12px] text-text-muted">{current === 'personal' ? 'Done' : 'Approved'} and cancelled tasks stay here for good.</p>
+          {showClosed ? (
+            <div className="mt-3">
+              {past.isLoading ? (
+                <Skeleton className="h-[88px]" />
+              ) : past.isError ? (
+                <p role="alert" className="text-[13px] text-state-danger">
+                  {past.error instanceof Error ? past.error.message : 'Could not load past tasks. Try again in a moment.'}
+                </p>
+              ) : !pastDays.length ? (
+                <p className="text-[13px] text-text-muted">No past tasks yet.</p>
+              ) : (
+                <div className="space-y-5">
+                  {pastDays.map((d) => (
+                    <section key={d.date} aria-labelledby={`past-${d.date}`}>
+                      <h2 id={`past-${d.date}`} className="mb-2 text-[12px] font-medium tracking-[0.06em] text-text-secondary uppercase">
+                        {d.date.slice(0, 4) === today.slice(0, 4) ? dueLabel(d.date) : `${dueLabel(d.date)} ${d.date.slice(0, 4)}`}
+                      </h2>
+                      <ul className="space-y-3">
+                        {d.tasks.map((t) => (
+                          <TaskRow key={t.id} task={t} today={today} userId={userId} tab={current} nameOf={nameOf} onOpen={() => open(t.id)} />
+                        ))}
+                      </ul>
+                    </section>
+                  ))}
+                </div>
+              )}
+            </div>
+          ) : null}
+        </div>
       </div>
 
       <NewTask open={creating} onOpenChange={setCreating} today={today} forMe={current === 'personal'} />
