@@ -39,9 +39,10 @@ function stateOn(
   return checkpointState(settings, kind, report?.timing ?? null, date === today.date ? today.time : null)
 }
 
-function Chip({ state }: { state: CheckpointState | null }) {
+/** `optional`: a day nothing was due (a weekend, 0019). */
+function Chip({ state, optional }: { state: CheckpointState | null; optional?: boolean }) {
   return state ? (
-    <StatusChip state={state} />
+    <StatusChip state={state} optional={optional} />
   ) : (
     <span className="text-text-muted" aria-label="Not yet due">
       -
@@ -158,6 +159,8 @@ export function TeamDay({
       ) : (
         data.roster.map((r) => {
           const reused = data.flags.filter((f) => f.user_id === r.user_id && f.flag === 'reused_proof')
+          // A weekend report (0019): filed though nothing was due.
+          const filedAny = data.reports.some((p) => p.user_id === r.user_id)
           return (
             <section key={r.user_id} aria-labelledby={`day-${r.user_id}`} className="hairline row-in rounded-[14px] bg-surface-raised p-4 shadow-[var(--shadow-sm)] sm:p-5">
               <div className="flex items-center gap-3">
@@ -176,9 +179,11 @@ export function TeamDay({
               </div>
               {summary?.available && timeOf(r.user_id) ? <TimeLine t={timeOf(r.user_id)!} className="mt-3" /> : null}
               <DayNotes notes={notesOf(r.user_id)} zone={settings.timezone} label="Their notes on this day" />
-              {!r.expected ? (
+              {!r.expected && !filedAny ? (
                 <p className="mt-1 text-[13px] text-text-muted">{r.absence ? `Away: ${r.absence}` : 'Not a workday'}</p>
               ) : (
+                <>
+                {!r.expected ? <p className="mt-1 text-[13px] text-text-muted">Weekend: reports were optional</p> : null}
                 <div className="hairline-t mt-4 grid gap-4 pt-4 md:grid-cols-3 md:gap-0 md:divide-x md:divide-[var(--line)]">
                   {REPORT_KINDS.map((k) => {
                     const report = data.reports.find((p) => p.user_id === r.user_id && p.kind === k)
@@ -188,13 +193,14 @@ export function TeamDay({
                           <span className="text-[12px] font-medium tracking-[0.06em] text-text-secondary uppercase">
                             {REPORT_LABEL[k].replace(' report', '')}
                           </span>
-                          <Chip state={stateOn(settings, data, r.user_id, date, k, today)} />
+                          <Chip state={stateOn(settings, data, r.user_id, date, k, today)} optional={!r.expected} />
                         </div>
                         {report ? <ReportDetail report={report} zone={settings.timezone} /> : null}
                       </div>
                     )
                   })}
                 </div>
+                </>
               )}
               {reused.length ? (
                 <p className="mt-3 text-[13px] text-state-warning">
@@ -321,7 +327,8 @@ export function MemberWeek({
                       <span className="sr-only"> (open this day)</span>
                     </button>
                   </th>
-                  {!d.expected ? (
+                  {/* A weekend with reports filed (0019) shows them, never as missed. */}
+                  {!d.expected && !data!.reports.some((r) => r.user_id === userId && r.work_date === d.work_date) ? (
                     <td colSpan={3} className="py-3 text-text-muted">
                       {d.absence ? `Away: ${d.absence}` : 'Not a workday'}
                     </td>
@@ -330,7 +337,7 @@ export function MemberWeek({
                       const report = data!.reports.find((r) => r.user_id === userId && r.work_date === d.work_date && r.kind === k)
                       return (
                         <td key={k} className="py-3 pr-4">
-                          <Chip state={stateOn(settings, data!, userId, d.work_date, k, today)} />
+                          <Chip state={stateOn(settings, data!, userId, d.work_date, k, today)} optional={!d.expected} />
                           {report ? (
                             <span className="tnum ml-2 text-text-muted">{officeClock(settings.timezone, report.submitted_at)}</span>
                           ) : null}

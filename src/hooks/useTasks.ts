@@ -20,6 +20,7 @@ const MISSING = new Set(['42P01', '42883', 'PGRST202', 'PGRST205'])
 export const taskKeys = {
   all: ['tasks'] as const,
   list: (userId: string) => ['tasks', 'list', userId] as const,
+  past: (userId: string) => ['tasks', 'past', userId] as const,
   events: (taskId: string) => ['tasks', 'events', taskId] as const,
   files: (taskId: string) => ['tasks', 'files', taskId] as const,
 }
@@ -108,6 +109,33 @@ export function useTasks() {
       if (error?.code && MISSING.has(error.code)) return { available: false, rows: [] }
       if (error) throw error
       return { available: true, rows: (data ?? []) as OfficeTask[] }
+    },
+    staleTime: 60_000,
+  })
+}
+
+/** How many closed tasks the Past tasks list reads, newest first. */
+const PAST_LIMIT = 500
+
+/**
+ * Past tasks: every approved or cancelled task you can see, with no age
+ * limit (tasks are kept with the task, never deleted). Read only once the
+ * list is opened: most visits never look.
+ */
+export function usePastTasks(enabled: boolean) {
+  const userId = useAuthStore((s) => s.profile?.id)
+  return useQuery({
+    queryKey: taskKeys.past(userId ?? ''),
+    enabled: enabled && !!userId,
+    queryFn: async (): Promise<OfficeTask[]> => {
+      const { data, error } = await supabase
+        .from('office_tasks')
+        .select('*')
+        .in('status', ['approved', 'cancelled'])
+        .order('closed_at', { ascending: false })
+        .limit(PAST_LIMIT)
+      if (error) throw error
+      return (data ?? []) as OfficeTask[]
     },
     staleTime: 60_000,
   })

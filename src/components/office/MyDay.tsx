@@ -1,6 +1,6 @@
 import { useEffect, useId, useRef, useState } from 'react'
-import { AlertCircle, CalendarOff, Check, Paperclip, X } from 'lucide-react'
-import { Button, EmptyState, FieldError, Label, Skeleton, Textarea } from '@/components/ui/primitives'
+import { AlertCircle, CalendarOff, Check, ChevronLeft, ChevronRight, Paperclip, X } from 'lucide-react'
+import { Button, EmptyState, FieldError, Input, Label, Skeleton, Textarea } from '@/components/ui/primitives'
 import { ReportDetail, StatusChip } from '@/components/office/ReportBits'
 import {
   MAX_FILES,
@@ -12,7 +12,7 @@ import {
   type ReportWithFiles,
 } from '@/hooks/useOffice'
 import { useNow } from '@/hooks/useNow'
-import { REPORT_KINDS, REPORT_LABEL, checkpointState, checkpointWindow, hhmm, isWorkday, takesProof } from '@/lib/office'
+import { REPORT_KINDS, REPORT_LABEL, checkpointState, checkpointWindow, hhmm, isOptionalDay, isWorkday, takesProof } from '@/lib/office'
 import { EarlyStart } from '@/components/office/EarlyStart'
 import { localParts } from '@/lib/timezones'
 import { useAuthStore } from '@/stores/authStore'
@@ -188,12 +188,15 @@ function Checkpoint({
   date,
   time,
   report,
+  optional,
 }: {
   settings: OfficeSettings
   kind: ReportKind
   date: string
   time: string
   report: ReportWithFiles | undefined
+  /** A weekend (0019): fileable, never due. */
+  optional: boolean
 }) {
   const state = checkpointState(settings, kind, report?.timing ?? null, time)
   const { opens, deadline } = checkpointWindow(settings, kind)
@@ -221,7 +224,7 @@ function Checkpoint({
           {REPORT_LABEL[kind]}
         </h2>
         <span className="tnum text-[12px] text-text-muted">{opens} to {deadline}</span>
-        <StatusChip state={state} />
+        <StatusChip state={state} optional={optional} />
       </div>
       {report ? (
         <div ref={filedRef} tabIndex={-1} className="mt-3 outline-none">
@@ -295,40 +298,130 @@ function YourTime({ settings, date }: { settings: OfficeSettings; date: string }
   )
 }
 
+/** Your own away day, if `date` is in one. */
+function useAwayOn(date: string) {
+  const userId = useAuthStore((s) => s.profile?.id)
+  const { data: absences } = useOfficeAbsences()
+  return absences?.find((a) => (a.user_id === null || a.user_id === userId) && a.starts_on <= date && date <= a.ends_on)
+}
+
+const longDate = (date: string) =>
+  new Date(`${date}T12:00:00Z`).toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long', timeZone: 'UTC' })
+
+/**
+ * Your past days: what you filed on any day before today, read only. Reports
+ * are never deleted (proof files go after 90 days; the text stays).
+ */
+function PastReports({ settings, today }: { settings: OfficeSettings; today: string }) {
+  const yesterday = addDays(today, -1)
+  // Null until a day is picked: a tab left open past midnight follows "yesterday".
+  const [picked, setPicked] = useState<string | null>(null)
+  const date = picked ?? yesterday
+  const { data: reports, isLoading, isError, error } = useMyReports(date)
+  const away = useAwayOn(date)
+  // Before you joined nothing was due from you either.
+  const joined = useAuthStore((s) => s.profile?.created_at)
+  const before = !!joined && date < localParts(settings.timezone, new Date(joined)).date
+  const due = isWorkday(settings, date) && !away && !before
+  const dayInput = useRef<HTMLInputElement>(null)
+  return (
+    <section aria-labelledby="past-days-h" className="hairline rounded-[14px] bg-surface-raised p-4 shadow-[var(--shadow-sm)] sm:p-5">
+      <h2 id="past-days-h" className="text-[15px] font-medium text-text-primary">
+        Past days
+      </h2>
+      <p className="mt-0.5 text-[12px] text-text-muted">Everything you filed before today stays here. Pick a day to read it.</p>
+      <div className="mt-3 flex flex-wrap items-center gap-2">
+        <Button variant="ghost" size="sm" className={TOUCH} aria-label="Previous day" onClick={() => setPicked(addDays(date, -1))}>
+          <ChevronLeft size={15} />
+        </Button>
+        <label htmlFor="past-day" className="sr-only">
+          Past day
+        </label>
+        <Input
+          ref={dayInput}
+          id="past-day"
+          type="date"
+          value={date}
+          max={yesterday}
+          onChange={(e) => e.target.value && setPicked(e.target.value)}
+          className="h-8 w-[160px] text-[13px] max-sm:h-11"
+        />
+        <Button variant="ghost" size="sm" className={TOUCH} aria-label="Next day" disabled={date >= yesterday}
+          onClick={() => {
+            const next = addDays(date, 1)
+            setPicked(next)
+            // The button disables itself at yesterday: keep focus on the day, not <body>.
+            if (next >= yesterday) dayInput.current?.focus()
+          }}
+        >
+          <ChevronRight size={15} />
+        </Button>
+      </div>
+      <p className="mt-3 text-[14px] font-medium text-text-primary" aria-live="polite">
+        {longDate(date)}
+      </p>
+      {isLoading ? (
+        <Skeleton className="mt-2 h-[88px]" />
+      ) : isError ? (
+        <p role="alert" className="mt-1 text-[13px] text-state-danger">
+          {error instanceof Error ? error.message : 'Could not load that day. Try again in a moment.'}
+        </p>
+      ) : !due && !reports?.length ? (
+        <p className="mt-1 text-[13px] text-text-muted">
+          {away ? `You were marked away: ${away.reason}.` : before ? 'Before you joined the office.' : 'Not a workday. Nothing filed.'}
+        </p>
+      ) : (
+        <ul className="mt-2 space-y-3">
+          {REPORT_KINDS.map((k, i) => {
+            const report = reports?.find((r) => r.kind === k)
+            return (
+              <li key={k} className={cn(i > 0 && 'hairline-t pt-3')}>
+                <div className="mb-1 flex flex-wrap items-center gap-2">
+                  <h3 className="mr-auto text-[13px] font-medium text-text-primary">{REPORT_LABEL[k]}</h3>
+                  <StatusChip state={checkpointState(settings, k, report?.timing ?? null, null)} optional={!due} />
+                </div>
+                {report ? <ReportDetail report={report} zone={settings.timezone} /> : null}
+              </li>
+            )
+          })}
+        </ul>
+      )}
+    </section>
+  )
+}
+
 export function MyDay({ settings }: { settings: OfficeSettings }) {
   const now = useNow()
   const { date, time } = localParts(settings.timezone, now)
-  const userId = useAuthStore((s) => s.profile?.id)
   const { data: reports, isLoading, isError, error } = useMyReports(date)
-  const { data: absences } = useOfficeAbsences()
-  const away = absences?.find(
-    (a) => (a.user_id === null || a.user_id === userId) && a.starts_on <= date && date <= a.ends_on,
-  )
+  const away = useAwayOn(date)
+  // A weekend with 0019 applied: the day as usual, with nothing due.
+  const optional = isOptionalDay(settings, date)
 
-  if (!isWorkday(settings, date)) {
+  const off =
+    !isWorkday(settings, date) && !optional
+      ? { title: 'No reports today', body: 'Reports are due on workdays, Monday to Friday.' }
+      : away
+        ? { title: 'No reports due today', body: `You are marked away: ${away.reason}.` }
+        : null
+  if (off || isError) {
+    // Past days stay readable on a day with nothing to file.
     return (
-      <EmptyState
-        icon={<CalendarOff size={22} strokeWidth={1.5} />}
-        title="No reports today"
-        body="Reports are due on workdays, Monday to Friday."
-      />
+      <>
+        {off ? (
+          <EmptyState icon={<CalendarOff size={22} strokeWidth={1.5} />} title={off.title} body={off.body} />
+        ) : (
+          <EmptyState title="Could not load your reports" body={error instanceof Error ? error.message : 'Try again in a moment.'} />
+        )}
+        <div className="mx-auto max-w-[720px] px-4 pb-6 sm:px-6">
+          <PastReports settings={settings} today={date} />
+        </div>
+      </>
     )
-  }
-  if (away) {
-    return (
-      <EmptyState
-        icon={<CalendarOff size={22} strokeWidth={1.5} />}
-        title="No reports due today"
-        body={`You are marked away: ${away.reason}.`}
-      />
-    )
-  }
-  if (isError) {
-    return <EmptyState title="Could not load your reports" body={error instanceof Error ? error.message : 'Try again in a moment.'} />
   }
 
   const filed = reports?.length ?? 0
-  const weekday = new Date(`${date}T12:00:00Z`).toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long', timeZone: 'UTC' })
+  const weekday = longDate(date)
   return (
     <div className="mx-auto max-w-[720px] space-y-5 p-4 sm:p-6">
       <div className="flex flex-wrap items-end justify-between gap-x-4 gap-y-2">
@@ -347,6 +440,11 @@ export function MyDay({ settings }: { settings: OfficeSettings }) {
           </p>
         ) : null}
       </div>
+      {optional ? (
+        <p className="hairline rounded-[14px] bg-surface-sunken px-4 py-3 text-[13px] text-text-secondary">
+          Weekend: reports are optional. If you are working today, file them at the usual times. Nothing is due, so nothing is marked missed.
+        </p>
+      ) : null}
       <div className="day-rail space-y-3">
       {isLoading
         ? REPORT_KINDS.map((k) => <Skeleton key={k} className="ml-9 h-[88px]" />)
@@ -358,10 +456,12 @@ export function MyDay({ settings }: { settings: OfficeSettings }) {
               date={date}
               time={time}
               report={reports?.find((r) => r.kind === k)}
+              optional={optional}
             />
           ))}
       </div>
       <YourTime settings={settings} date={date} />
+      <PastReports settings={settings} today={date} />
     </div>
   )
 }
