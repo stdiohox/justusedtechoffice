@@ -100,7 +100,8 @@ function useKnockRpc<T>(fn: (input: T) => PromiseLike<{ data: unknown; error: { 
       return data
     },
     onSettled: () => {
-      void queryClient.invalidateQueries({ queryKey: knockKeys.all })
+      // Returned, so "Let in" opens the chat only once the knock reads accepted here.
+      return queryClient.invalidateQueries({ queryKey: knockKeys.all })
     },
   })
 }
