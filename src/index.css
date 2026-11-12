@@ -136,6 +136,11 @@
     --shadow-md: 0 4px 16px rgba(11, 26, 18, 0.1);
     --shadow-lg: 0 8px 24px rgba(11, 26, 18, 0.12);
 
+    /* Insights chart (0021): on time, late, missed. Each measured against its surface. */
+    --chart-on-time: #007a37;
+    --chart-late: #c9971c;
+    --chart-missed: #b0432f;
+
     /* Brand tints. Alpha fills that carry meaning, not surface roles. */
     --tint-brand: rgba(0, 122, 55, 0.1);
     --tint-accent: rgba(255, 217, 102, 0.18);
@@ -172,6 +177,9 @@
     rule: it fails as text on ivory (2.10:1) and passes comfortably here.
   */
   :root[data-theme='dark'] {
+    --chart-on-time: #0f8548;
+    --chart-late: #b08a10;
+    --chart-missed: #c6452f;
     --surface: #0e1612;
     --surface-raised: #16201a;
     --surface-sunken: #0a110d;

@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 import { Camera, DoorClosed, DoorOpen, Loader2, Users } from 'lucide-react'
 import { ChatPanel } from '@/components/office/ChatPanel'
+import { useOccupants, useRooms } from '@/hooks/useExtras'
 import { isChatOpen, isWaiting, useCancelKnock, useKnock, useMissedKnocks, useMyKnocks, type Knock } from '@/hooks/useKnocks'
 import { useToastStore } from '@/stores/toastStore'
 import { Button, EmptyState, Skeleton } from '@/components/ui/primitives'
@@ -49,6 +50,7 @@ function Room({
   door,
   today,
   signedOut,
+  roomName,
 }: {
   member: OfficeMemberWithUser
   status: MapStatus
@@ -63,6 +65,8 @@ function Room({
    * are out after a stay, and the same instant on the viewer's clock when it differs.
    */
   signedOut?: { office: string; yours: string | null } | null
+  /** In a meeting room (0021), for everyone to see. */
+  roomName?: string | null
 }) {
   const name = member.user?.full_name ?? 'Former member'
   const inRoom = status !== 'offline'
@@ -88,6 +92,11 @@ function Room({
           <p className="truncate text-[12px] text-[rgba(246,250,247,0.70)]">{member.user ? titleOf(member.user) : ''}</p>
         </div>
       </div>
+      {roomName ? (
+        <p className="mt-2 inline-flex items-center gap-1.5 text-[13px] font-semibold text-gold">
+          <DoorOpen size={13} strokeWidth={1.75} aria-hidden /> In the {roomName}
+        </p>
+      ) : null}
       <DoorNote view={door} today={today} />
       {signedOut && status === 'offline' ? (
         <p className="tnum mt-2 text-[12px] text-[rgba(246,250,247,0.70)]">
@@ -344,6 +353,9 @@ export function Office() {
   const knock = useKnock()
   const cancel = useCancelKnock()
   const showToast = useToastStore((s) => s.showToast)
+  // 0021: who is in a meeting room, for the doors. Empty until the migration is in.
+  const { data: roomsList } = useRooms()
+  const { data: occupants } = useOccupants()
   const [params, setParams] = useSearchParams()
   const chatId = params.get('chat')
   // A ?chat= that is not one of your accepted knocks goes away once known.
@@ -516,6 +528,7 @@ export function Office() {
                   door={doorOf(m.user_id)}
                   today={clock.date}
                   signedOut={role.seesTeam ? signedOutOf(m.user_id) : null}
+                  roomName={roomsList?.find((r) => r.id === occupants?.find((o) => o.user_id === m.user_id)?.room_id)?.name}
                 />
               ))}
             </ul>
