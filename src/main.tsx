@@ -17,7 +17,12 @@ const Reports = lazy(() => import('@/pages/Reports').then((m) => ({ default: m.R
 const Tasks = lazy(() => import('@/pages/Tasks').then((m) => ({ default: m.Tasks })))
 const Leaderboard = lazy(() => import('@/pages/Leaderboard').then((m) => ({ default: m.Leaderboard })))
 const Settings = lazy(() => import('@/pages/Settings').then((m) => ({ default: m.Settings })))
-
+// 0021: hidden from the nav until the migration is applied; each page says so if opened by URL.
+const Notices = lazy(() => import('@/pages/Notices').then((m) => ({ default: m.Notices })))
+const TimeOff = lazy(() => import('@/pages/TimeOff').then((m) => ({ default: m.TimeOff })))
+const Rooms = lazy(() => import('@/pages/Rooms').then((m) => ({ default: m.Rooms })))
+const TeamChat = lazy(() => import('@/pages/TeamChat').then((m) => ({ default: m.TeamChat })))
+const Insights = lazy(() => import('@/pages/Insights').then((m) => ({ default: m.Insights })))
 
 /** Shaped like the page it stands in for, so the chunk arriving is not a jump. */
 function RouteFallback() {
@@ -97,6 +102,23 @@ function App() {
             </Suspense>
           }
         />
+        {[
+          ['/notices', Notices],
+          ['/time-off', TimeOff],
+          ['/rooms', Rooms],
+          ['/chat', TeamChat],
+          ['/insights', Insights],
+        ].map(([path, Page]) => (
+          <Route
+            key={path as string}
+            path={path as string}
+            element={
+              <Suspense fallback={<RouteFallback />}>
+                <Page />
+              </Suspense>
+            }
+          />
+        ))}
         <Route
           path="/settings"
           element={

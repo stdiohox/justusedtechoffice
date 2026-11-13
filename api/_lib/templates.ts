@@ -511,6 +511,26 @@ ${rows
   }
 }
 
+/** Someone in a meeting room asked you in (0021). */
+export function officeRoomInvite(i: { recipientName: string; fromName: string; roomName: string; roomsUrl: string }): Email {
+  i = { ...i, fromName: cleanName(i.fromName) || 'Someone', roomName: cleanName(i.roomName) || 'a room' }
+  return {
+    subject: `${i.fromName} invited you to the ${i.roomName}`,
+    html: shell(
+      p(`Hi ${esc(firstNameOf(i.recipientName))},`) +
+        p(`<strong>${esc(i.fromName)}</strong> asked you to join them in the <strong>${esc(i.roomName)}</strong>. Step in to read the conversation so far and join in. The invite lapses after 30 minutes.`) +
+        link(i.roomsUrl, 'Go to the room'),
+    ),
+    text: [
+      `Hi ${firstNameOf(i.recipientName)},`,
+      '',
+      `${i.fromName} asked you to join them in the ${i.roomName}. Step in to read the conversation so far and join in. The invite lapses after 30 minutes.`,
+      '',
+      `Go to the room: ${i.roomsUrl}`,
+    ].join('\n'),
+  }
+}
+
 /** Someone knocked while you were not on the site. */
 export function officeKnock(i: { recipientName: string; fromName: string; officeUrl: string }): Email {
   i = { ...i, fromName: cleanName(i.fromName) || 'Someone' }

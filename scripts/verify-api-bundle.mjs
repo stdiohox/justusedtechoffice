@@ -31,6 +31,7 @@ const ENTRIES = [
   'api/cron/office-alerts.js',
   'api/office/knock-ping.js',
   'api/office/task-notify.js',
+  'api/office/room-invite.js',
   'api/team/invite.js',
   'api/auth/recover.js',
 ]

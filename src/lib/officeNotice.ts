@@ -10,8 +10,8 @@
  * must stay true of the code; if the office starts recording something new,
  * the notice changes first.
  */
-/** 2 (0011): tasks. 3 (0012, 0013): stars, images and the weekly leaderboard. 4 (0014): a start before sign-in, if you say one. 5 (0015): tasks you give yourself, and edits to tasks. 6 (0017): Emmanuella (HR) sees what Mr Tito sees. 7 (0019): optional weekend reports, which the leaderboard does not count. */
-export const NOTICE_VERSION = 7
+/** 2 (0011): tasks. 3 (0012, 0013): stars, images and the weekly leaderboard. 4 (0014): a start before sign-in, if you say one. 5 (0015): tasks you give yourself, and edits to tasks. 6 (0017): Emmanuella (HR) sees what Mr Tito sees. 7 (0019): optional weekend reports, which the leaderboard does not count. 8 (0021): notices, time off, rooms, team chat, insights. */
+export const NOTICE_VERSION = 8
 
 export const NOTICE_TITLE = 'How the office records your time'
 
@@ -33,6 +33,7 @@ export const NOTICE: NoticeSection[] = [
       'Tasks the team gives each other, and tasks you give yourself: what the task is, who gave it to whom, its due date, when it was started, done, approved, sent back, edited, moved to someone else or cancelled, by whom, what an edit changed, and the notes and links added along the way.',
       'The 1 to 5 stars and the comment given on an approved task, and any images handed in with it.',
       'Reports are due Monday to Friday. You may also file them on a weekend if you work then: they are optional, never marked missed, and recorded like any other report.',
+      'Notices you confirm you have read, the time off you ask for and its decision, the rooms you book or step into, and what you post in team chat.',
       'A weekly leaderboard, Friday to Friday: for each person, the tasks approved (with their stars) and the reports filed on time on workdays. It does not count weekend reports, tasks you give yourself, time in the office, sign-in times or activity.',
     ],
   },
@@ -51,6 +52,9 @@ export const NOTICE: NoticeSection[] = [
       'Beside your day, and in their daily summary, Mr Tito and Emmanuella see any start you say, and the time of your first task step, knock or chat that day, whether or not you said one.',
       'A task is seen by the person who gave it and the person it was given to; a task you give yourself, by you. The office admins, Mr Tito, Emmanuella and Hazel, see every task, including the ones you give yourself. Hazel sees only tasks: not your reports, your time figures or your notes.',
       'The same people see a task’s stars and the images handed in with it.',
+      'Everyone in the office sees team chat, room bookings, who is in a room, who has read a notice, and the dates of approved time off. The type of leave and your note are seen only by you, Mr Tito and Emmanuella.',
+      'What is said in a room is readable only by the people in that room while they are in it, and that includes anyone who steps in later. Managers outside the room cannot read it. It is deleted when the last person leaves. Everyone sees who is in a room; only the two people involved see an invite. Wrong tries at a room code are counted for 10 minutes, then deleted.',
+      'Mr Tito and Emmanuella see Insights: your reports and tasks added up over time. It uses nothing that is not already listed here.',
       'Everyone in the office sees the whole leaderboard. On Friday evening each person is emailed their own week, the top of the table gets a special email, and Mr Tito and the admins get the whole table.',
     ],
   },

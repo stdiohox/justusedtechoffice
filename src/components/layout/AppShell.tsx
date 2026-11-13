@@ -1,5 +1,6 @@
-import { NavLink, Outlet } from 'react-router-dom'
-import { Building2, ClipboardCheck, ListChecks, LogOut, Moon, Settings, Sun, Trophy } from 'lucide-react'
+import { useEffect, useRef, useState } from 'react'
+import { NavLink, Outlet, useLocation } from 'react-router-dom'
+import { BarChart3, Building2, CalendarDays, ClipboardCheck, DoorOpen, ListChecks, LogOut, Megaphone, Menu, MessagesSquare, Moon, Settings, Sun, Trophy } from 'lucide-react'
 import { useAuthStore } from '@/stores/authStore'
 import { useToastStore } from '@/stores/toastStore'
 import { useThemeStore } from '@/stores/themeStore'
@@ -11,18 +12,21 @@ import { Toast } from '@/components/ui/Toast'
 import { KnockLayer } from '@/components/office/KnockLayer'
 import { CheckinLayer } from '@/components/office/CheckinLayer'
 import { TaskLayer } from '@/components/office/TaskLayer'
+import { RoomInviteLayer } from '@/components/office/RoomInviteLayer'
 import { OfficePresence } from '@/components/office/OfficePresence'
 import { StatusMenu } from '@/components/office/StatusMenu'
 import { Photo } from '@/components/ui/Photo'
 import { usePhotoRefresh } from '@/hooks/usePhotos'
 import { useTasks } from '@/hooks/useTasks'
 import { useLeaderboardAvailable } from '@/hooks/useLeaderboard'
+import { useExtrasAvailable, useExtrasRealtime, useLeave, useNotices } from '@/hooks/useExtras'
 import { needsMe } from '@/lib/tasks'
 
 /**
  * The office's frame: a dark sidebar on a computer, a bottom tab bar on a
- * phone, and a top bar with your status. Presence, knocks and check-ins are
- * mounted here, so they reach you on every screen.
+ * phone (four tabs and a More menu for the rest), and a top bar with your
+ * status. Presence, knocks, check-ins and room invites are mounted here, so
+ * they reach you on every screen.
  */
 
 const NAV = [
@@ -30,10 +34,19 @@ const NAV = [
   { to: '/reports', label: 'Reports', icon: ClipboardCheck, adminOnly: false },
   // Shown once 0011 is applied.
   { to: '/tasks', label: 'Tasks', icon: ListChecks, adminOnly: false },
+  // Shown once 0021 is applied (extras); Insights to Mr Tito and HR only (teamOnly).
+  { to: '/chat', label: 'Team chat', icon: MessagesSquare, adminOnly: false, extras: true },
   // Shown once 0012 is applied.
   { to: '/leaderboard', label: 'Leaderboard', icon: Trophy, adminOnly: false },
+  { to: '/notices', label: 'Notices', icon: Megaphone, adminOnly: false, extras: true },
+  { to: '/time-off', label: 'Time off', icon: CalendarDays, adminOnly: false, extras: true },
+  { to: '/rooms', label: 'Rooms', icon: DoorOpen, adminOnly: false, extras: true },
+  { to: '/insights', label: 'Insights', icon: BarChart3, adminOnly: false, extras: true, teamOnly: true },
   { to: '/settings', label: 'Settings', icon: Settings, adminOnly: true },
 ]
+
+/** The phone's tab bar has room for these; the rest sit under More. */
+const PHONE_TABS = new Set(['/office', '/reports', '/tasks', '/chat'])
 
 function Logo({ className }: { className?: string }) {
   return (
@@ -56,15 +69,57 @@ export function AppShell() {
   usePhotoRefresh()
   const { data: tasks } = useTasks()
   const { data: boardOn } = useLeaderboardAvailable()
+  const extrasOn = useExtrasAvailable()
+  useExtrasRealtime()
+  const { data: notices } = useNotices()
+  // Only Mr Tito and HR decide time off, so only they need the list for a badge.
+  const { data: leave } = useLeave(seesTeam)
 
   // Settings: Mr Tito, HR, and anyone labelled manager (Hazel), as AdminRoute.
   const isAdmin = seesTeam || profile?.role === 'manager'
   const items = NAV.filter(
-    (n) => (!n.adminOnly || isAdmin) && (n.to !== '/tasks' || tasks?.available) && (n.to !== '/leaderboard' || boardOn),
+    (n) =>
+      (!n.adminOnly || isAdmin) &&
+      (!n.teamOnly || seesTeam) &&
+      (!n.extras || extrasOn === true) &&
+      (n.to !== '/tasks' || tasks?.available) &&
+      (n.to !== '/leaderboard' || boardOn),
   )
-  // Tasks waiting on you: given to you and not started, or done and waiting for your check.
+  // Phone: the More menu. Closed on a route change, on Escape (focus goes back
+  // to the button that opened it) and on a press outside it.
+  const [moreOpen, setMoreOpen] = useState(false)
+  const moreButton = useRef<HTMLButtonElement>(null)
+  const { pathname } = useLocation()
+  useEffect(() => setMoreOpen(false), [pathname])
+  useEffect(() => {
+    if (!moreOpen) return
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape') return
+      setMoreOpen(false)
+      moreButton.current?.focus()
+    }
+    const onDown = (e: PointerEvent) => {
+      const el = e.target as Node
+      if (moreButton.current?.contains(el) || document.getElementById('phone-more')?.contains(el)) return
+      setMoreOpen(false)
+    }
+    window.addEventListener('keydown', onKey)
+    document.addEventListener('pointerdown', onDown)
+    return () => {
+      window.removeEventListener('keydown', onKey)
+      document.removeEventListener('pointerdown', onDown)
+    }
+  }, [moreOpen])
+  // Waiting on you: tasks given to you and not started, or done and waiting
+  // for your check; notices you must confirm; time off for you to decide.
   const waiting = profile && tasks?.available ? tasks.rows.filter((t) => needsMe(t, profile.id)).length : 0
-  const badge = (to: string) => (to === '/tasks' && waiting ? waiting : 0)
+  const unread = (notices ?? []).filter((n) => n.needs_read && !n.reads.some((r) => r.user_id === profile?.id)).length
+  const toDecide = seesTeam ? (leave ?? []).filter((r) => r.status === 'pending' && r.user_id !== profile?.id).length : 0
+  const badge = (to: string) => (to === '/tasks' ? waiting : to === '/notices' ? unread : to === '/time-off' ? toDecide : 0)
+  const moreItems = items.filter((n) => !PHONE_TABS.has(n.to))
+  const moreCount = moreItems.reduce((sum, n) => sum + badge(n.to), 0)
+  // The page you are on may live under More; the button carries that.
+  const moreActive = moreItems.some((n) => pathname.startsWith(n.to))
   const name = profile?.full_name ?? ''
 
   return (
@@ -155,10 +210,11 @@ export function AppShell() {
 
       {/* Phone: the sidebar becomes a bottom tab bar. */}
       <nav aria-label="Main" className="on-dark hairline-t fixed inset-x-0 bottom-0 z-50 flex h-16 bg-[var(--sidebar-bg)] md:hidden">
-        {items.map(({ to, label, icon: Icon }) => (
+        {items.filter((n) => PHONE_TABS.has(n.to)).map(({ to, label, icon: Icon }) => (
           <NavLink
             key={to}
             to={to}
+            onClick={() => setMoreOpen(false)}
             className={({ isActive }) =>
               cn(
                 'flex flex-1 flex-col items-center justify-center gap-1 text-[11px] transition-colors duration-150',
@@ -180,21 +236,63 @@ export function AppShell() {
           </NavLink>
         ))}
         <button
+          ref={moreButton}
           type="button"
-          onClick={() => void signOut()}
-          className="flex flex-1 flex-col items-center justify-center gap-1 text-[11px] text-[var(--on-dark-muted)]"
+          aria-expanded={moreOpen}
+          aria-controls="phone-more"
+          onClick={() => setMoreOpen((v) => !v)}
+          className={cn(
+            'flex flex-1 flex-col items-center justify-center gap-1 text-[11px] transition-colors duration-150',
+            moreOpen || moreActive ? 'font-bold text-accent' : 'text-[var(--on-dark-muted)]',
+          )}
         >
-          <LogOut size={19} strokeWidth={1.75} aria-hidden />
-          Sign out
+          <span className="relative">
+            <Menu size={19} strokeWidth={1.75} aria-hidden />
+            {moreCount ? (
+              <span aria-hidden className="absolute -top-1.5 -right-2.5 min-w-4 rounded-full bg-gold px-1 text-center text-[10px] leading-4 font-bold text-ink tabular-nums">
+                {moreCount}
+              </span>
+            ) : null}
+          </span>
+          More
+          {moreCount ? <span className="sr-only">, {moreCount} waiting on you</span> : null}
         </button>
       </nav>
+      {moreOpen ? (
+        <nav id="phone-more" aria-label="More" className="on-dark fixed inset-x-0 bottom-16 z-50 border-t border-[var(--sidebar-border)] bg-[var(--sidebar-bg)] p-2 shadow-[var(--shadow-lg)] md:hidden">
+          {moreItems.map(({ to, label, icon: Icon }) => (
+            <NavLink
+              key={to}
+              to={to}
+              onClick={() => setMoreOpen(false)}
+              className={({ isActive }) =>
+                cn('flex h-11 items-center gap-3 rounded-full px-4 text-sm', isActive ? 'font-bold text-accent' : 'text-[var(--on-dark-muted)]')
+              }
+            >
+              <Icon size={18} strokeWidth={1.75} aria-hidden />
+              {label}
+              {badge(to) ? (
+                <span className="ml-auto rounded-full bg-gold px-1.5 text-[11px] font-bold text-ink tabular-nums">
+                  {badge(to)}
+                  <span className="sr-only"> waiting on you</span>
+                </span>
+              ) : null}
+            </NavLink>
+          ))}
+          <button type="button" onClick={() => void signOut()} className="flex h-11 w-full items-center gap-3 rounded-full px-4 text-sm text-[var(--on-dark-muted)]">
+            <LogOut size={18} strokeWidth={1.75} aria-hidden />
+            Sign out
+          </button>
+        </nav>
+      ) : null}
 
-      {/* Presence, knocks and check-ins reach you on every screen. Keyed by
+      {/* Presence, knocks, check-ins and room invites reach you on every screen. Keyed by
           person: nothing carries over to whoever signs in next on this browser. */}
       <OfficePresence />
       <KnockLayer key={profile?.id ?? 'signed-out'} />
       <CheckinLayer key={`checkin-${profile?.id ?? 'signed-out'}`} />
       <TaskLayer key={`tasks-${profile?.id ?? 'signed-out'}`} />
+      <RoomInviteLayer key={`rooms-${profile?.id ?? 'signed-out'}`} />
 
       {toast ? <Toast key={toast.id} message={toast.message} type={toast.type} onClose={hideToast} /> : null}
     </div>

@@ -170,6 +170,38 @@ sign-in times are not scored. **Friday after 20:30**, on the alerts clock (0003)
 week by email, the top of the table a special one, Mr Tito and the admins the whole table. It is for
 recognition: no pay or disciplinary step follows from it (the staff notice, v3, says so).
 
+## Notices, time off, rooms, team chat and insights (0021)
+
+Ported from the Brightwork demo (`stdiohox/TheOffice`), which was built on this office's schema.
+Hidden until 0021 is applied; each page says so if opened by URL. Staff notice version 8 covers them.
+
+- **Notices**: Mr Tito, Emmanuella and Hazel post; a notice that must be read shows who has pressed
+  "I have read this" (and, to the admins, who has not). Unread must-read notices are a badge in the nav.
+- **Time off**: anyone asks (annual, sick, personal; today or later, up to 60 days); Mr Tito or
+  Emmanuella decides, never their own. Approval writes a day away (Reports > Team), so no report is
+  due and nothing is flagged; cancelling an approved request removes it. Everyone sees the dates of
+  who is off; the kind and the note stay with the person and whoever decides.
+- **Rooms**: Boardroom (12), Focus room (4), Corner room (2). Book a slot (no overlaps, four hours
+  at most, 90 days ahead); whoever booked it or an admin cancels. Step in and your door says "In the
+  Boardroom". The first person into an empty room gets a six-digit code; anyone else needs the
+  code (shown inside the room) or an invite from inside. Nobody is exempt, Mr Tito included. Five
+  wrong tries lock that person out of that room for 10 minutes. What is said in a room is readable
+  only by the people in it (RLS) and is deleted when the last person leaves. An invite reaches the
+  person as a pop-up on every screen and by email (`api/office/room-invite`), and lapses after 30
+  minutes, and at most one email per pair in 30 minutes; at most 30 invites an hour per person.
+  A screen with a room open says "still here" every two minutes, and anyone unseen for ten is
+  swept out of the room by the next room call, so a closed laptop never holds a room shut.
+  Text only: there is no video.
+- **Team chat**: General, Wins and Ask for help, read by everyone in the office. Knock chats are
+  unchanged.
+- **Insights** (Mr Tito and Emmanuella): the last 5, 10 or 20 workdays of reports on time, late and
+  missed, tasks approved and past due, and stars, per day and per person, with a plain-words brief
+  written by rule from the figures. `office_insights()` refuses anyone else.
+
+The new tables are on Realtime; the screens refresh as rows change and poll every 20 seconds as a
+fallback. Rollback: `0021_office_extras.down.sql` (deletes everything the five features stored;
+days away written by an approval stay).
+
 ## Trial mode
 
 The office starts in trial: sign-outs after inactivity and missed check-ins are recorded and
@@ -194,7 +226,7 @@ The 10 minutes to "away" is in the screens (`src/lib/presence.ts`), not the data
 
 ## Rolling back
 
-`supabase/rollbacks/`, one per migration, **newest first** (0018 down to 0002). Each is one
+`supabase/rollbacks/`, one per migration, **newest first** (0021 down to 0002). Each is one
 transaction. 0002's and 0007's leave their storage buckets (`proof`, `avatars`): empty and delete
 them in Storage afterwards (Supabase refuses SQL deletes on storage tables).
 
