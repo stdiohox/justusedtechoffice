@@ -198,9 +198,23 @@ Hidden until 0021 is applied; each page says so if opened by URL. Staff notice v
   missed, tasks approved and past due, and stars, per day and per person, with a plain-words brief
   written by rule from the figures. `office_insights()` refuses anyone else.
 
+**Emails, on the alerts clock (0003), no new SQL.** Latched in `office_alert_log` like every other
+office email, so each one is sent once and a failed send is retried on the next run.
+
+| When | To | What |
+|---|---|---|
+| Someone asks for time off | Mr Tito and Emmanuella, never the person who asked | who, the kind, the dates, the working days, their note, link to Time off |
+| A request is approved or declined | whoever asked | the decision, who made it, their note, and what it means for their reports |
+| A notice that **must** be read is posted | everyone in the office except its author | the title and the opening of it, link to confirm |
+
+A notice that does not have to be read is never emailed, and nothing older than 14 days is chased,
+so switching this on never blasts a backlog. Both steps run every day, not only workdays: a
+decision should not wait for Monday. Nothing here records anything new, so the staff notice is
+unchanged; it already covers time off, notices and who sees them.
+
 The new tables are on Realtime; the screens refresh as rows change and poll every 20 seconds as a
 fallback. Rollback: `0021_office_extras.down.sql` (deletes everything the five features stored;
-days away written by an approval stay).
+days away written by an approval stay). The emails stop by themselves if 0021 is rolled back.
 
 ## Trial mode
 

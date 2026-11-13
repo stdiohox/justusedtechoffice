@@ -8,7 +8,10 @@ import {
   leaderboardTable,
   officeAlerts,
   officeDigest,
+  officeLeaveAsked,
+  officeLeaveDecided,
   officeMissedNudge,
+  officeNoticePosted,
   officeReminder,
   weeklySummary,
   type BoardRow,
@@ -728,6 +731,167 @@ async function purgeProof(ctx: Ctx): Promise<void> {
 
 /* ----------------------------------------------------------------- run */
 
+/* ------------------------------------- 5. time off and notices (0021) */
+
+/** Codes for "that table does not exist yet" (0021 not applied). */
+const MISSING_TABLE = new Set(['42P01', 'PGRST205'])
+
+/** How far back a change is still worth an email. Nothing older is chased. */
+const CATCH_UP_DAYS = 14
+
+interface LeaveRow {
+  id: string
+  user_id: string
+  kind: string
+  starts_on: string
+  ends_on: string
+  note: string | null
+  decided_by: string | null
+  decision_note: string | null
+}
+
+interface NoticeRow {
+  id: string
+  title: string
+  body: string
+  author: string
+}
+
+/** A plain date, read the way the screens read it: "Mon 17 Nov". */
+const leaveDay = (day: string) =>
+  new Date(`${day}T12:00:00Z`).toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short', timeZone: 'UTC' })
+
+const leaveWhen = (from: string, to: string) => (from === to ? leaveDay(from) : `${leaveDay(from)} to ${leaveDay(to)}`)
+
+/** Working days in the span, counted as the Time off screen counts them. */
+function leaveWorkdays(from: string, to: string): number {
+  let n = 0
+  for (const d = new Date(`${from}T12:00:00Z`); d <= new Date(`${to}T12:00:00Z`); d.setUTCDate(d.getUTCDate() + 1)) {
+    if (![0, 6].includes(d.getUTCDay())) n++
+  }
+  return n
+}
+
+const sinceIso = () => new Date(Date.now() - CATCH_UP_DAYS * 86_400_000).toISOString()
+
+/**
+ * Time off (0021). A request reaches whoever decides, and the decision
+ * reaches whoever asked. One email each, latched per request, so a request
+ * left waiting is never chased again and a decision is never sent twice.
+ * Silent before 0021 is applied.
+ */
+async function sendLeave(ctx: Ctx): Promise<void> {
+  const timeOffUrl = `${ctx.reportsUrl.replace(/\/reports$/, '')}/time-off`
+
+  // Asked: to Mr Tito and HR, never to the person who asked.
+  const asked = await ctx.db
+    .from('office_leave_requests')
+    .select('id, user_id, kind, starts_on, ends_on, note, decided_by, decision_note')
+    .eq('status', 'pending')
+    .gte('created_at', sinceIso())
+    .limit(200)
+  if (asked.error) {
+    if (MISSING_TABLE.has(asked.error.code ?? '')) return
+    ctx.problems.push(`leave asked: ${asked.error.message}`)
+    return
+  }
+  for (const r of (asked.data ?? []) as LeaveRow[]) {
+    const key = `leave-asked:${r.id}`
+    if (!(await claim(ctx.db, key))) continue
+    let ok = true
+    // Mr Tito, unless the request is his own.
+    if (ctx.manager && r.user_id !== ctx.settings.manager_id) {
+      ok = (await send(ctx, ctx.manager, officeLeaveAsked({ ...askedFor(ctx.manager.name, r, ctx), timeOffUrl }), `${key}/manager`)) && ok
+    }
+    // HR decides too (0017), but never their own request.
+    for (const p of ctx.hr) {
+      if (p.id === r.user_id) continue
+      ok = (await send(ctx, p, officeLeaveAsked({ ...askedFor(p.name, r, ctx), timeOffUrl }), `${key}/hr/${p.id}`)) && ok
+    }
+    if (!ok) await release(ctx.db, key)
+  }
+
+  // Decided: to whoever asked.
+  const decided = await ctx.db
+    .from('office_leave_requests')
+    .select('id, user_id, kind, starts_on, ends_on, note, decided_by, decision_note, status')
+    .in('status', ['approved', 'declined'])
+    .gte('decided_at', sinceIso())
+    .limit(200)
+  if (decided.error) {
+    if (MISSING_TABLE.has(decided.error.code ?? '')) return
+    ctx.problems.push(`leave decided: ${decided.error.message}`)
+    return
+  }
+  for (const r of (decided.data ?? []) as (LeaveRow & { status: string })[]) {
+    const key = `leave-decided:${r.id}`
+    if (!(await claim(ctx.db, key))) continue
+    const ok = await toMember(
+      ctx,
+      r.user_id,
+      officeLeaveDecided({
+        recipientName: ctx.names.get(r.user_id) ?? '',
+        approved: r.status === 'approved',
+        kind: r.kind,
+        when: leaveWhen(r.starts_on, r.ends_on),
+        decidedBy: (r.decided_by && ctx.names.get(r.decided_by)) || 'The office',
+        note: r.decision_note,
+        timeOffUrl,
+      }),
+      key,
+    )
+    if (!ok) await release(ctx.db, key)
+  }
+}
+
+/** The same request, addressed to one decider. */
+function askedFor(recipientName: string, r: LeaveRow, ctx: Ctx) {
+  return {
+    recipientName,
+    who: ctx.names.get(r.user_id) ?? 'Someone',
+    kind: r.kind,
+    when: leaveWhen(r.starts_on, r.ends_on),
+    days: leaveWorkdays(r.starts_on, r.ends_on),
+    note: r.note,
+  }
+}
+
+/**
+ * Notices that must be read (0021), once per person per notice. A badge in
+ * the office only reaches whoever opens it; this reaches the rest. Notices
+ * that do not have to be read are never emailed. Silent before 0021.
+ */
+async function sendNotices(ctx: Ctx): Promise<void> {
+  const noticesUrl = `${ctx.reportsUrl.replace(/\/reports$/, '')}/notices`
+  const { data, error } = await ctx.db
+    .from('office_notices')
+    .select('id, title, body, author')
+    .eq('needs_read', true)
+    .gte('created_at', sinceIso())
+    .limit(50)
+  if (error) {
+    if (MISSING_TABLE.has(error.code ?? '')) return
+    ctx.problems.push(`notices: ${error.message}`)
+    return
+  }
+  for (const n of (data ?? []) as NoticeRow[]) {
+    const author = ctx.names.get(n.author) ?? 'The office'
+    for (const [userId, person] of ctx.people) {
+      // Whoever wrote it has read it.
+      if (userId === n.author) continue
+      const key = `notice:${n.id}:${userId}`
+      if (!(await claim(ctx.db, key))) continue
+      const ok = await send(
+        ctx,
+        person,
+        officeNoticePosted({ recipientName: person.name, title: n.title, body: n.body, author, noticesUrl }),
+        key,
+      )
+      if (!ok) await release(ctx.db, key)
+    }
+  }
+}
+
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   const secret = process.env.CRON_SECRET
   if (!secret) {
@@ -821,6 +985,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     }
 
     await sendLeaderboard(ctx)
+    // 0021: not gated on a workday. A decision should not wait for Monday.
+    await sendLeave(ctx)
+    await sendNotices(ctx)
     await purgeTaskProof(ctx)
     await purgeProof(ctx)
 

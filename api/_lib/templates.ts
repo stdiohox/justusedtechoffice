@@ -511,6 +511,143 @@ ${rows
   }
 }
 
+/* ------------------------------------------------- time off and notices (0021) */
+
+/** What a kind of leave is called in an email. */
+export const LEAVE_WORD: Record<string, string> = {
+  annual: 'annual leave',
+  sick: 'sick leave',
+  personal: 'personal leave',
+}
+
+/**
+ * Someone asked for time off, to whoever decides (Mr Tito and HR). Sent once
+ * per request by the alerts clock; the request itself is already on screen.
+ * The note is typed by the person, so it is cleaned and escaped like a name.
+ */
+export function officeLeaveAsked(i: {
+  recipientName: string
+  who: string
+  kind: string
+  /** "Mon 17 Nov to Tue 18 Nov", already on the office's clock. */
+  when: string
+  days: number
+  note: string | null
+  timeOffUrl: string
+}): Email {
+  const who = cleanName(i.who) || 'Someone'
+  const word = LEAVE_WORD[i.kind] ?? 'time off'
+  const note = i.note ? cleanName(i.note, 300) : null
+  const span = `${i.when} (${i.days} working ${i.days === 1 ? 'day' : 'days'})`
+  return {
+    subject: `${who} asked for ${word}`,
+    html: shell(
+      p(`Hi ${esc(firstNameOf(i.recipientName))},`) +
+        p(`<strong>${esc(who)}</strong> has asked for ${esc(word)}.`) +
+        p(`<strong>${esc(span)}</strong>`) +
+        (note ? p(`They added: ${esc(note)}`) : '') +
+        p('Approving it books the days away, so no report is due from them and nothing is flagged.') +
+        link(i.timeOffUrl, 'Open Time off to decide'),
+    ),
+    text: [
+      `Hi ${firstNameOf(i.recipientName)},`,
+      '',
+      `${who} has asked for ${word}.`,
+      span,
+      ...(note ? [`They added: ${note}`] : []),
+      '',
+      'Approving it books the days away, so no report is due from them and nothing is flagged.',
+      '',
+      `Open Time off to decide: ${i.timeOffUrl}`,
+    ].join('\n'),
+  }
+}
+
+/** The answer, to whoever asked. */
+export function officeLeaveDecided(i: {
+  recipientName: string
+  approved: boolean
+  kind: string
+  when: string
+  decidedBy: string
+  note: string | null
+  timeOffUrl: string
+}): Email {
+  const word = LEAVE_WORD[i.kind] ?? 'time off'
+  const by = cleanName(i.decidedBy) || 'The office'
+  const note = i.note ? cleanName(i.note, 300) : null
+  const head = i.approved
+    ? `Your ${word} is approved for ${i.when}.`
+    : `Your ${word} for ${i.when} was not approved.`
+  const after = i.approved
+    ? 'Those days are now booked as away: no report is due from you, and your door says so.'
+    : 'Nothing is booked. Speak to whoever decided if you need to ask again for other days.'
+  return {
+    subject: i.approved ? `Your ${word} is approved` : `Your ${word} was declined`,
+    html: shell(
+      p(`Hi ${esc(firstNameOf(i.recipientName))},`) +
+        p(`<strong>${esc(head)}</strong>`) +
+        p(`Decided by ${esc(by)}.`) +
+        (note ? p(`They added: ${esc(note)}`) : '') +
+        p(esc(after)) +
+        link(i.timeOffUrl, 'Open Time off'),
+    ),
+    text: [
+      `Hi ${firstNameOf(i.recipientName)},`,
+      '',
+      head,
+      `Decided by ${by}.`,
+      ...(note ? [`They added: ${note}`] : []),
+      '',
+      after,
+      '',
+      `Open Time off: ${i.timeOffUrl}`,
+    ].join('\n'),
+  }
+}
+
+/**
+ * A notice everyone must read. Sent once per person per notice, so a notice
+ * that nobody opens the office to see still reaches them.
+ */
+export function officeNoticePosted(i: {
+  recipientName: string
+  title: string
+  body: string
+  author: string
+  noticesUrl: string
+}): Email {
+  const title = cleanName(i.title, 120) || 'A notice'
+  const author = cleanName(i.author) || 'The office'
+  // The body is read in full in the office; the email carries the opening.
+  const full = i.body.trim()
+  const opening = full.length > 400 ? `${full.slice(0, 400).trimEnd()}...` : full
+  const lines = opening.split('\n').filter((l) => l.trim())
+  return {
+    subject: `Please read: ${title}`,
+    html: shell(
+      p(`Hi ${esc(firstNameOf(i.recipientName))},`) +
+        p(`${esc(author)} posted a notice the whole team must read.`) +
+        p(`<strong>${esc(title)}</strong>`) +
+        lines.map((l) => p(esc(l))).join('') +
+        p('Open the office and press "I have read this" so nobody has to chase it.') +
+        link(i.noticesUrl, 'Read it and confirm'),
+    ),
+    text: [
+      `Hi ${firstNameOf(i.recipientName)},`,
+      '',
+      `${author} posted a notice the whole team must read.`,
+      '',
+      title,
+      ...lines,
+      '',
+      'Open the office and press "I have read this" so nobody has to chase it.',
+      '',
+      `Read it and confirm: ${i.noticesUrl}`,
+    ].join('\n'),
+  }
+}
+
 /** Someone in a meeting room asked you in (0021). */
 export function officeRoomInvite(i: { recipientName: string; fromName: string; roomName: string; roomsUrl: string }): Email {
   i = { ...i, fromName: cleanName(i.fromName) || 'Someone', roomName: cleanName(i.roomName) || 'a room' }
