@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { NavLink, Outlet, useLocation } from 'react-router-dom'
 import { BarChart3, Building2, CalendarDays, ClipboardCheck, DoorOpen, ListChecks, LogOut, Megaphone, Menu, MessagesSquare, Moon, Settings, Sun, Trophy } from 'lucide-react'
 import { useAuthStore } from '@/stores/authStore'
@@ -72,7 +72,8 @@ export function AppShell() {
   const extrasOn = useExtrasAvailable()
   useExtrasRealtime()
   const { data: notices } = useNotices()
-  const { data: leave } = useLeave()
+  // Only Mr Tito and HR decide time off, so only they need the list for a badge.
+  const { data: leave } = useLeave(seesTeam)
 
   // Settings: Mr Tito, HR, and anyone labelled manager (Hazel), as AdminRoute.
   const isAdmin = seesTeam || profile?.role === 'manager'
@@ -84,15 +85,30 @@ export function AppShell() {
       (n.to !== '/tasks' || tasks?.available) &&
       (n.to !== '/leaderboard' || boardOn),
   )
-  // Phone: the More menu. Closed on every route change and on Escape.
+  // Phone: the More menu. Closed on a route change, on Escape (focus goes back
+  // to the button that opened it) and on a press outside it.
   const [moreOpen, setMoreOpen] = useState(false)
+  const moreButton = useRef<HTMLButtonElement>(null)
   const { pathname } = useLocation()
   useEffect(() => setMoreOpen(false), [pathname])
   useEffect(() => {
     if (!moreOpen) return
-    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && setMoreOpen(false)
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape') return
+      setMoreOpen(false)
+      moreButton.current?.focus()
+    }
+    const onDown = (e: PointerEvent) => {
+      const el = e.target as Node
+      if (moreButton.current?.contains(el) || document.getElementById('phone-more')?.contains(el)) return
+      setMoreOpen(false)
+    }
     window.addEventListener('keydown', onKey)
-    return () => window.removeEventListener('keydown', onKey)
+    document.addEventListener('pointerdown', onDown)
+    return () => {
+      window.removeEventListener('keydown', onKey)
+      document.removeEventListener('pointerdown', onDown)
+    }
   }, [moreOpen])
   // Waiting on you: tasks given to you and not started, or done and waiting
   // for your check; notices you must confirm; time off for you to decide.
@@ -102,6 +118,8 @@ export function AppShell() {
   const badge = (to: string) => (to === '/tasks' ? waiting : to === '/notices' ? unread : to === '/time-off' ? toDecide : 0)
   const moreItems = items.filter((n) => !PHONE_TABS.has(n.to))
   const moreCount = moreItems.reduce((sum, n) => sum + badge(n.to), 0)
+  // The page you are on may live under More; the button carries that.
+  const moreActive = moreItems.some((n) => pathname.startsWith(n.to))
   const name = profile?.full_name ?? ''
 
   return (
@@ -218,13 +236,14 @@ export function AppShell() {
           </NavLink>
         ))}
         <button
+          ref={moreButton}
           type="button"
           aria-expanded={moreOpen}
           aria-controls="phone-more"
           onClick={() => setMoreOpen((v) => !v)}
           className={cn(
             'flex flex-1 flex-col items-center justify-center gap-1 text-[11px] transition-colors duration-150',
-            moreOpen ? 'font-bold text-accent' : 'text-[var(--on-dark-muted)]',
+            moreOpen || moreActive ? 'font-bold text-accent' : 'text-[var(--on-dark-muted)]',
           )}
         >
           <span className="relative">

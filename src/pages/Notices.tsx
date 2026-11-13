@@ -1,4 +1,4 @@
-import { useId, useState, type FormEvent } from 'react'
+import { useId, useRef, useState, type FormEvent } from 'react'
 import { Megaphone, Pin, Trash2 } from 'lucide-react'
 import { Button, EmptyState, FieldError, Input, Label, Skeleton, Textarea } from '@/components/ui/primitives'
 import { useOfficeMembers, useOfficeRole } from '@/hooks/useOffice'
@@ -12,13 +12,14 @@ import { absoluteTime, firstName } from '@/lib/utils'
  * The notice board (0021). Admins post; a notice that must be read shows who has
  * pressed "I have read this", so nobody has to chase it by hand.
  */
-function NoticeCard({ n, canManage }: { n: Notice; canManage: boolean }) {
+function NoticeCard({ n, canManage, onRemoved }: { n: Notice; canManage: boolean; onRemoved: () => void }) {
   const me = useAuthStore((s) => s.profile?.id) ?? ''
   const { data: members } = useOfficeMembers()
   const read = useReadNotice()
   const remove = useRemoveNotice()
   const showToast = useToastStore((s) => s.showToast)
   const fail = (e: Error) => showToast(e.message, 'error')
+  const heading = useRef<HTMLHeadingElement>(null)
   const team = (members ?? []).filter((m) => m.active)
   const author = team.find((m) => m.user_id === n.author)?.user?.full_name ?? 'Someone'
   const readers = new Set(n.reads.map((r) => r.user_id))
@@ -26,9 +27,11 @@ function NoticeCard({ n, canManage }: { n: Notice; canManage: boolean }) {
   const iHaveRead = readers.has(me)
 
   return (
-    <article className="hairline rounded-[14px] bg-surface-raised p-4 sm:p-5">
+    <article aria-labelledby={`notice-${n.id}`} className="hairline rounded-[14px] bg-surface-raised p-4 sm:p-5">
       <div className="flex items-start gap-2">
-        <h2 className="mr-auto text-[16px] font-bold text-text-primary">{n.title}</h2>
+        <h2 id={`notice-${n.id}`} ref={heading} tabIndex={-1} className="mr-auto text-[16px] font-bold text-text-primary outline-none">
+          {n.title}
+        </h2>
         {n.pinned ? (
           <span className="inline-flex shrink-0 items-center gap-1 rounded-full bg-[var(--tint-brand)] px-2 py-0.5 text-[12px] font-semibold text-brand">
             <Pin size={12} aria-hidden /> Pinned
@@ -37,7 +40,10 @@ function NoticeCard({ n, canManage }: { n: Notice; canManage: boolean }) {
         {canManage ? (
           <button
             type="button"
-            onClick={() => remove.mutate(n.id, { onError: fail })}
+            onClick={() => {
+              if (!window.confirm(`Remove the notice "${n.title}" for everyone?`)) return
+              remove.mutate(n.id, { onSuccess: onRemoved, onError: fail })
+            }}
             aria-label={`Remove the notice: ${n.title}`}
             className="press rounded-full p-1.5 text-text-muted hover:bg-[var(--hover)] hover:text-state-danger max-sm:p-3"
           >
@@ -61,8 +67,22 @@ function NoticeCard({ n, canManage }: { n: Notice; canManage: boolean }) {
           {iHaveRead ? (
             <span className="text-[13px] font-semibold text-state-success">You have read this</span>
           ) : (
-            <Button size="sm" className="max-sm:h-11" loading={read.isPending} onClick={() => read.mutate({ notice_id: n.id, user_id: me }, { onError: fail })}>
-              I have read this
+            <Button
+              size="sm"
+              className="max-sm:h-11"
+              loading={read.isPending}
+              onClick={() =>
+                read.mutate(
+                  { notice_id: n.id, user_id: me },
+                  {
+                    // The button goes once pressed; the card's title keeps the place.
+                    onSuccess: () => heading.current?.focus({ preventScroll: true }),
+                    onError: fail,
+                  },
+                )
+              }
+            >
+              I have read this<span className="sr-only">: {n.title}</span>
             </Button>
           )}
         </div>
@@ -86,6 +106,9 @@ export function Notices() {
   const [pinned, setPinned] = useState(false)
   const [needsRead, setNeedsRead] = useState(true)
   const [problem, setProblem] = useState<string | null>(null)
+  const postButton = useRef<HTMLButtonElement>(null)
+  const pageTitle = useRef<HTMLHeadingElement>(null)
+  const pending = on === undefined || isLoading
 
   const submit = (e: FormEvent) => {
     e.preventDefault()
@@ -100,6 +123,8 @@ export function Notices() {
           setPinned(false)
           setOpen(false)
           showToast('Posted to the team', 'success')
+          // The form has gone; back to the button that opened it.
+          postButton.current?.focus({ preventScroll: true })
         },
         onError: (err) => setProblem(err.message),
       },
@@ -112,12 +137,14 @@ export function Notices() {
     <div className="office-page">
       <div className="hairline-b sticky top-[var(--app-sticky-top)] z-10 flex flex-wrap items-end gap-3 bg-surface/95 px-4 pt-4 pb-3 backdrop-blur-sm sm:px-6">
         <div className="mr-auto">
-          <h1 className="font-display text-[28px] leading-none font-medium text-text-primary">Notices</h1>
+          <h1 ref={pageTitle} tabIndex={-1} className="font-display text-[28px] leading-none font-medium text-text-primary outline-none">
+            Notices
+          </h1>
           <p className="mt-1.5 text-[13px] text-text-muted">What the whole team needs to know, and who has read it.</p>
         </div>
         {canManage ? (
-          <Button variant={open ? 'secondary' : 'primary'} onClick={() => setOpen((v) => !v)} aria-expanded={open}>
-            {open ? 'Close' : 'Post a notice'}
+          <Button ref={postButton} variant={open ? 'secondary' : 'primary'} onClick={() => setOpen((v) => !v)} aria-expanded={open}>
+            Post a notice
           </Button>
         ) : null}
       </div>
@@ -146,14 +173,14 @@ export function Notices() {
             </Button>
           </form>
         ) : null}
-        {isLoading ? (
+        {pending ? (
           <Skeleton className="h-[220px]" />
         ) : isError ? (
           <EmptyState title="Could not load the notices" body="Try again in a moment." />
         ) : !data?.length ? (
           <EmptyState icon={<Megaphone size={22} strokeWidth={1.5} />} title="No notices yet" body="Anything posted here reaches the whole team." />
         ) : (
-          data.map((n) => <NoticeCard key={n.id} n={n} canManage={canManage} />)
+          data.map((n) => <NoticeCard key={n.id} n={n} canManage={canManage} onRemoved={() => pageTitle.current?.focus({ preventScroll: true })} />)
         )}
       </div>
     </div>

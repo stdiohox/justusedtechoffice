@@ -188,7 +188,10 @@ Hidden until 0021 is applied; each page says so if opened by URL. Staff notice v
   wrong tries lock that person out of that room for 10 minutes. What is said in a room is readable
   only by the people in it (RLS) and is deleted when the last person leaves. An invite reaches the
   person as a pop-up on every screen and by email (`api/office/room-invite`), and lapses after 30
-  minutes; at most 30 invites an hour per person. Text only: there is no video.
+  minutes, and at most one email per pair in 30 minutes; at most 30 invites an hour per person.
+  A screen with a room open says "still here" every two minutes, and anyone unseen for ten is
+  swept out of the room by the next room call, so a closed laptop never holds a room shut.
+  Text only: there is no video.
 - **Team chat**: General, Wins and Ask for help, read by everyone in the office. Knock chats are
   unchanged.
 - **Insights** (Mr Tito and Emmanuella): the last 5, 10 or 20 workdays of reports on time, late and

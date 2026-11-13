@@ -9,7 +9,11 @@ import { useAuthStore } from '@/stores/authStore'
  * and their nav entries stay hidden, so this frontend can ship first.
  */
 
-export const extrasKeys = { all: ['extras'] as const, available: ['extras', 'available'] as const }
+export const extrasKeys = {
+  all: ['extras'] as const,
+  // Not under `all`: a chat message landing must not re-run the probe.
+  available: ['extras-available'] as const,
+}
 
 /** Postgres / PostgREST codes for "no such table". */
 const MISSING = new Set(['42P01', 'PGRST205'])
@@ -35,18 +39,23 @@ export function useExtrasAvailable(): boolean | undefined {
   return data
 }
 
-function useExtra<T>(name: string, read: () => PromiseLike<{ data: unknown; error: { message: string } | null }>, enabled = true, live = false) {
+interface ReadOptions {
+  enabled?: boolean
+  /** Poll as a fallback for a dropped Realtime channel. Only while the tab is visible. */
+  live?: boolean
+  /** Keep the old rows up while a new parameter's rows load (a date range, a day count). Never for a chat. */
+  keep?: boolean
+}
+
+function useExtra<T>(name: string, read: () => PromiseLike<{ data: unknown; error: { message: string } | null }>, { enabled = true, live = false, keep = false }: ReadOptions = {}) {
   const signedIn = useAuthStore((s) => !!s.profile)
   const on = useExtrasAvailable()
   return useQuery({
     queryKey: [...extrasKeys.all, name],
     enabled: signedIn && on === true && enabled,
     staleTime: 15_000,
-    // Realtime (useExtrasRealtime) is how a change usually arrives; this is
-    // the fallback for a channel that dropped. Only while the tab is visible.
-    refetchInterval: live ? 20_000 : false,
-    // A new date range keeps the old rows up until the new ones land.
-    placeholderData: keepPreviousData,
+    refetchInterval: live ? 60_000 : false,
+    placeholderData: keep ? keepPreviousData : undefined,
     queryFn: async () => {
       const { data, error } = await read()
       if (error) throw new Error(error.message)
@@ -67,10 +76,25 @@ function useCall<T>(call: (input: T) => PromiseLike<{ data: unknown; error: { me
   })
 }
 
+/** Which reads a change to each table can move. */
+const TABLE_KEYS: Record<string, string[]> = {
+  office_notices: ['notices'],
+  office_notice_reads: ['notices'],
+  office_leave_requests: ['leave', 'off', 'insights-'],
+  office_bookings: ['bookings-'],
+  office_room_occupants: ['occupants', 'room-code-', 'room-messages'],
+  office_room_messages: ['room-messages'],
+  office_room_invites: ['room-invites'],
+  office_channel_messages: ['chat-'],
+}
+
+const channelName = () =>
+  `office-extras-${typeof crypto.randomUUID === 'function' ? crypto.randomUUID() : Math.random().toString(36).slice(2)}`
+
 /**
  * One channel for all of 0021's tables: any change a person may see
- * (Realtime applies the same policies as a read) refreshes these screens.
- * Mounted once, in the shell, while the person is signed in.
+ * (Realtime applies the same policies as a read) refreshes the reads that
+ * table feeds. Mounted once, in the shell, while the person is signed in.
  */
 export function useExtrasRealtime() {
   const queryClient = useQueryClient()
@@ -78,31 +102,35 @@ export function useExtrasRealtime() {
   const on = useExtrasAvailable()
   useEffect(() => {
     if (!userId || !on) return
+    const pending = new Set<string>()
     let timer: ReturnType<typeof setTimeout> | null = null
-    const refresh = () => {
+    const flush = () => {
+      timer = null
+      const prefixes = [...pending]
+      pending.clear()
+      void queryClient.invalidateQueries({
+        queryKey: extrasKeys.all,
+        predicate: (q) => {
+          const name = q.queryKey[1]
+          return typeof name === 'string' && prefixes.some((p) => name.startsWith(p))
+        },
+      })
+    }
+    const refresh = (prefixes: string[]) => {
       // Several rows land together (a room emptying): one refetch, not five.
-      if (timer) return
-      timer = setTimeout(() => {
-        timer = null
-        void queryClient.invalidateQueries({ queryKey: extrasKeys.all })
-      }, 250)
+      for (const p of prefixes) pending.add(p)
+      if (!timer) timer = setTimeout(flush, 250)
     }
     // A fresh name each time: supabase.channel() hands back a same-named
     // channel that is still tearing down.
-    let channel = supabase.channel(`office-extras-${crypto.randomUUID()}`)
-    for (const table of [
-      'office_notices',
-      'office_notice_reads',
-      'office_leave_requests',
-      'office_bookings',
-      'office_room_occupants',
-      'office_room_messages',
-      'office_room_invites',
-      'office_channel_messages',
-    ]) {
-      channel = channel.on('postgres_changes', { event: '*', schema: 'public', table }, refresh)
+    let channel = supabase.channel(channelName())
+    for (const [table, prefixes] of Object.entries(TABLE_KEYS)) {
+      channel = channel.on('postgres_changes', { event: '*', schema: 'public', table }, () => refresh(prefixes))
     }
-    channel.subscribe()
+    channel.subscribe((status) => {
+      // Joined, or joined again after a drop: anything that landed in the gap is fetched now.
+      if (status === 'SUBSCRIBED') refresh(Object.values(TABLE_KEYS).flat())
+    })
     return () => {
       if (timer) clearTimeout(timer)
       void supabase.removeChannel(channel)
@@ -127,8 +155,9 @@ export const useNotices = () =>
   )
 export const usePostNotice = () =>
   useCall((i: { title: string; body: string; pinned: boolean; needs_read: boolean; author: string }) => supabase.from('office_notices').insert(i))
+/** Already marked from another tab: that is fine, not an error. */
 export const useReadNotice = () =>
-  useCall((i: { notice_id: string; user_id: string }) => supabase.from('office_notice_reads').insert(i))
+  useCall((i: { notice_id: string; user_id: string }) => supabase.from('office_notice_reads').upsert(i, { onConflict: 'notice_id,user_id', ignoreDuplicates: true }))
 export const useRemoveNotice = () => useCall((id: string) => supabase.from('office_notices').delete().eq('id', id))
 
 /* time off */
@@ -145,7 +174,8 @@ export interface LeaveRequest {
   decision_note: string | null
   created_at: string
 }
-export const useLeave = () => useExtra<LeaveRequest[]>('leave', () => supabase.from('office_leave_requests').select('*').order('starts_on', { ascending: false }).limit(300))
+export const useLeave = (enabled = true) =>
+  useExtra<LeaveRequest[]>('leave', () => supabase.from('office_leave_requests').select('*').order('starts_on', { ascending: false }).limit(300), { enabled })
 export interface WhoIsOff {
   user_id: string
   starts_on: string
@@ -182,16 +212,38 @@ export interface Occupant {
 }
 export const useRooms = () => useExtra<Room[]>('rooms', () => supabase.from('office_rooms').select('*').order('capacity', { ascending: false }))
 export const useBookings = (since: string) =>
-  useExtra<Booking[]>(`bookings-${since}`, () => supabase.from('office_bookings').select('*').gte('ends_at', since).order('starts_at').limit(200))
-export const useOccupants = () => useExtra<Occupant[]>('occupants', () => supabase.from('office_room_occupants').select('*'), true, true)
+  useExtra<Booking[]>(`bookings-${since}`, () => supabase.from('office_bookings').select('*').gte('ends_at', since).order('starts_at').limit(200), { keep: true })
+export const useOccupants = () => useExtra<Occupant[]>('occupants', () => supabase.from('office_room_occupants').select('user_id, room_id, joined_at'), { live: true })
 export const useBookRoom = () =>
   useCall((i: { room: string; title: string; start: string; end: string }) =>
     supabase.rpc('book_room', { p_room: i.room, p_title: i.title, p_start: i.start, p_end: i.end }),
   )
 export const useCancelBooking = () => useCall((id: string) => supabase.rpc('cancel_booking', { p_id: id }))
 export type EnterAnswer = 'in' | 'out' | 'needs_code' | 'wrong_code' | 'locked'
-export const useEnterRoom = () =>
-  useCall((i: { room: string | null; code?: string }) => supabase.rpc('enter_room', { p_room: i.room, p_code: i.code ?? null }))
+const ANSWERS = new Set<string>(['in', 'out', 'needs_code', 'wrong_code', 'locked'])
+/** Step in (with a code if asked) or, with room null, out. Out also forgets the room's words and code here. */
+export function useEnterRoom() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: async (i: { room: string | null; code?: string }): Promise<EnterAnswer> => {
+      const { data, error } = await supabase.rpc('enter_room', { p_room: i.room, p_code: i.code ?? null })
+      if (error) throw new Error(error.message)
+      if (typeof data !== 'string' || !ANSWERS.has(data)) throw new Error('The door gave an unexpected answer. Reload and try again.')
+      return data as EnterAnswer
+    },
+    onSuccess: (answer) => {
+      if (answer !== 'out') return
+      // Readable only while inside: nothing of the room stays in this browser's cache.
+      void queryClient.removeQueries({
+        queryKey: extrasKeys.all,
+        predicate: (q) => typeof q.queryKey[1] === 'string' && (q.queryKey[1] === 'room-messages' || q.queryKey[1].startsWith('room-code-')),
+      })
+    },
+    onSettled: () => void queryClient.invalidateQueries({ queryKey: extrasKeys.all }),
+  })
+}
+/** "Still here", while the room is open on screen (the server sweeps anyone unseen for 10 minutes). */
+export const useTouchRoom = () => useCall(() => supabase.rpc('touch_room'))
 /** Readable only from inside the room. */
 export const useRoomCode = (room: string) =>
   useExtra<{ code: string } | null>(`room-code-${room}`, () => supabase.from('office_room_codes').select('code').eq('room_id', room).maybeSingle())
@@ -213,25 +265,31 @@ export interface RoomInvite {
   created_at: string
   expires_at: string
 }
-/** No previous data here: one room's words must never show, even for a moment, in another. */
+/** The latest 300, oldest first. No previous data: one room's words must never show, even for a moment, in another. */
 export function useRoomMessages(room: string | null) {
   const signedIn = useAuthStore((s) => !!s.profile)
   const on = useExtrasAvailable()
   return useQuery({
     queryKey: [...extrasKeys.all, 'room-messages', room],
     enabled: signedIn && on === true && !!room,
-    refetchInterval: 20_000,
+    refetchInterval: 60_000,
     queryFn: async () => {
-      const { data, error } = await supabase.from('office_room_messages').select('*').eq('room_id', room!).order('created_at').order('id').limit(300)
+      const { data, error } = await supabase
+        .from('office_room_messages')
+        .select('*')
+        .eq('room_id', room!)
+        .order('created_at', { ascending: false })
+        .order('id', { ascending: false })
+        .limit(300)
       if (error) throw new Error(error.message)
-      return (data ?? []) as RoomMessage[]
+      return ((data ?? []) as RoomMessage[]).reverse()
     },
   })
 }
 export const usePostRoomMessage = () =>
   useCall((i: { room_id: string; body: string; sender: string }) => supabase.from('office_room_messages').insert(i))
 export const useRoomInvites = () =>
-  useExtra<RoomInvite[]>('room-invites', () => supabase.from('office_room_invites').select('*').order('created_at', { ascending: false }).limit(100), true, true)
+  useExtra<RoomInvite[]>('room-invites', () => supabase.from('office_room_invites').select('*').order('created_at', { ascending: false }).limit(100), { live: true })
 export const useRespondRoomInvite = () =>
   useCall((i: { id: string; accept: boolean }) => supabase.rpc('respond_room_invite', { p_id: i.id, p_accept: i.accept }))
 /** Invite, then ask the server to email. The email is best effort: the invite stands either way. */
@@ -246,6 +304,7 @@ export const useInviteToRoom = () =>
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
         body: JSON.stringify({ inviteId: made.data }),
+        signal: AbortSignal.timeout(8_000),
       }).catch(() => null)
     }
     return made
@@ -264,8 +323,7 @@ export const useChannel = (channel: Channel) =>
   useExtra<ChannelMessage[]>(
     `chat-${channel}`,
     () => supabase.from('office_channel_messages').select('*').eq('channel', channel).order('created_at', { ascending: false }).limit(100),
-    true,
-    true,
+    { live: true },
   )
 export const usePostMessage = () =>
   useCall((i: { channel: Channel; body: string; sender: string }) => supabase.from('office_channel_messages').insert(i))
@@ -304,4 +362,4 @@ export interface Insights {
   by_person: InsightsPerson[]
 }
 export const useInsights = (days: number, enabled: boolean) =>
-  useExtra<Insights>(`insights-${days}`, () => supabase.rpc('office_insights', { p_days: days }), enabled)
+  useExtra<Insights>(`insights-${days}`, () => supabase.rpc('office_insights', { p_days: days }), { enabled, keep: true })

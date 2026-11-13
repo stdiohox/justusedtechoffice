@@ -1,3 +1,4 @@
+import { useMemo } from 'react'
 import { DoorOpen } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 import { Button } from '@/components/ui/primitives'
@@ -6,8 +7,9 @@ import { useNow } from '@/hooks/useNow'
 import { useRespondRoomInvite, useRoomInvites, useRooms } from '@/hooks/useExtras'
 import { useAuthStore } from '@/stores/authStore'
 import { useToastStore } from '@/stores/toastStore'
+import { markEnteredRoom } from '@/lib/roomFocus'
 
-/** "Come into the Boardroom": reaches you on every screen, beside the knocks (0022). */
+/** "Come into the Boardroom": reaches you on every screen, beside the knocks (0021). */
 export function RoomInviteLayer() {
   const me = useAuthStore((s) => s.profile?.id)
   const { data: invites } = useRoomInvites()
@@ -18,9 +20,12 @@ export function RoomInviteLayer() {
   const navigate = useNavigate()
   const now = useNow(15_000).getTime()
   const waiting = (invites ?? []).filter((i) => i.to_user === me && i.status === 'pending' && new Date(i.expires_at).getTime() > now)
-  const name = (id: string) => members?.find((m) => m.user_id === id)?.user?.full_name ?? 'Someone'
+  const names = useMemo(() => new Map((members ?? []).map((m) => [m.user_id, m.user?.full_name ?? 'Someone'])), [members])
+  const name = (id: string) => names.get(id) ?? 'Someone'
   const room = (id: string) => rooms?.find((r) => r.id === id)?.name ?? 'a room'
-  const announcement = waiting.map((i) => `${name(i.from_user)} invited you to the ${room(i.room_id)}.`).join(' ')
+  // Announce the newest only: a list re-read on every change is noise.
+  const newest = waiting[0]
+  const announcement = newest ? `${name(newest.from_user)} invited you to the ${room(newest.room_id)}.` : ''
 
   return (
     <>
@@ -50,18 +55,24 @@ export function RoomInviteLayer() {
                 onClick={() =>
                   respond.mutate(
                     { id: i.id, accept: true },
-                    { onSuccess: () => navigate('/rooms'), onError: (e) => showToast(e.message, 'error') },
+                    {
+                      onSuccess: () => {
+                        markEnteredRoom()
+                        navigate('/rooms')
+                      },
+                      onError: (e) => showToast(e.message, 'error'),
+                    },
                   )
                 }
               >
-                Join
+                Join<span className="sr-only"> {name(i.from_user)} in the {room(i.room_id)}</span>
               </Button>
               <Button
                 variant="ghost"
                 className="border border-[rgba(246,250,247,0.22)] text-ivory hover:bg-[rgba(246,250,247,0.08)] hover:text-ivory max-sm:h-11"
                 onClick={() => respond.mutate({ id: i.id, accept: false }, { onError: (e) => showToast(e.message, 'error') })}
               >
-                Not now
+                Not now<span className="sr-only">, {name(i.from_user)}</span>
               </Button>
             </div>
           </div>

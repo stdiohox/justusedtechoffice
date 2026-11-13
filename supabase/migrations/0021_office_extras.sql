@@ -51,6 +51,7 @@ create table public.office_notices (
   created_at timestamptz not null default now()
 );
 create index office_notices_order on public.office_notices (pinned desc, created_at desc);
+create index office_notices_author on public.office_notices (author);
 
 create table public.office_notice_reads (
   notice_id uuid not null references public.office_notices(id) on delete cascade,
@@ -72,7 +73,6 @@ alter table public.office_notice_reads enable row level security;
 create policy "Team reads notices" on public.office_notices for select to authenticated using ((select public.is_team_member()));
 create policy "Admins post notices" on public.office_notices for insert to authenticated
   with check ((select public.is_notice_admin()) and author = (select auth.uid()));
-create policy "Admins change notices" on public.office_notices for update to authenticated using ((select public.is_notice_admin()));
 create policy "Admins remove notices" on public.office_notices for delete to authenticated using ((select public.is_notice_admin()));
 create policy "Team sees who has read" on public.office_notice_reads for select to authenticated using ((select public.is_team_member()));
 create policy "You mark your own read" on public.office_notice_reads for insert to authenticated
@@ -98,6 +98,8 @@ create table public.office_leave_requests (
 );
 create index office_leave_requests_user on public.office_leave_requests (user_id, status);
 create index office_leave_requests_pending on public.office_leave_requests (status) where status = 'pending';
+create index office_leave_requests_decided_by on public.office_leave_requests (decided_by);
+create index office_leave_requests_absence on public.office_leave_requests (absence_id);
 
 alter table public.office_leave_requests enable row level security;
 create policy "See your own requests; managers see all" on public.office_leave_requests for select to authenticated
@@ -160,8 +162,12 @@ returns void language plpgsql security definer set search_path = public, pg_temp
 declare r public.office_leave_requests%rowtype;
 begin
   select * into r from public.office_leave_requests where id = p_id for update;
-  if not found or r.user_id <> auth.uid() then raise exception 'That is not your request.' using errcode = '42501'; end if;
+  if not found or r.user_id is distinct from auth.uid() then raise exception 'That is not your request.' using errcode = '42501'; end if;
   if r.status not in ('pending', 'approved') then raise exception 'That request is already closed.' using errcode = '22023'; end if;
+  -- Leave that has begun stays on record: taking the days away back would turn them into missed reports.
+  if r.status = 'approved' and r.starts_on < public.office_today() then
+    raise exception 'That leave has already started. Ask Mr Tito or HR.' using errcode = '22023';
+  end if;
   if r.absence_id is not null then delete from public.office_absences where id = r.absence_id; end if;
   update public.office_leave_requests set status = 'cancelled', absence_id = null where id = p_id;
 end $$;
@@ -188,12 +194,17 @@ create table public.office_bookings (
 );
 create index office_bookings_room_time on public.office_bookings (room_id, starts_at);
 create index office_bookings_ends on public.office_bookings (ends_at);
+create index office_bookings_by on public.office_bookings (booked_by);
 
 create table public.office_room_occupants (
   user_id   uuid primary key references public.profiles(id) on delete cascade,
   room_id   text not null references public.office_rooms(id),
-  joined_at timestamptz not null default now()
+  joined_at timestamptz not null default now(),
+  -- Touched by touch_room() every couple of minutes while the room is open on
+  -- screen. A closed laptop is swept out after 10 minutes (office_room_sweep).
+  last_seen timestamptz not null default now()
 );
+create index office_room_occupants_seen on public.office_room_occupants (last_seen);
 create index office_room_occupants_room on public.office_room_occupants (room_id);
 
 create table public.office_room_messages (
@@ -203,7 +214,8 @@ create table public.office_room_messages (
   body       text not null check (char_length(btrim(body)) between 1 and 1000),
   created_at timestamptz not null default now()
 );
-create index office_room_messages_room_created on public.office_room_messages (room_id, created_at);
+create index office_room_messages_room_created on public.office_room_messages (room_id, created_at desc, id desc);
+create index office_room_messages_sender on public.office_room_messages (sender);
 
 create table public.office_room_invites (
   id           uuid primary key default gen_random_uuid(),
@@ -219,6 +231,7 @@ create table public.office_room_invites (
 );
 create index office_room_invites_to on public.office_room_invites (to_user, status);
 create index office_room_invites_from on public.office_room_invites (from_user, room_id, status);
+create index office_room_invites_created on public.office_room_invites (created_at desc);
 
 create table public.office_room_codes (
   room_id    text primary key references public.office_rooms(id) on delete cascade,
@@ -287,31 +300,53 @@ begin
   if not found then raise exception 'Only whoever booked it, or an admin, can cancel this.' using errcode = '42501'; end if;
 end $$;
 
--- Going in, once it is settled that you may. Not callable from outside.
+-- A closed tab never says goodbye. Anyone not seen for 10 minutes is taken out
+-- of their room (the trigger below then does what the last one out would).
+-- Called from the room functions, not from the browser.
+create or replace function public.office_room_sweep()
+returns void language sql security definer set search_path = public, pg_temp as $$
+  delete from public.office_room_occupants where last_seen < now() - interval '10 minutes'
+$$;
+
+-- "Still here": the screen calls this while the room is open.
+create or replace function public.touch_room()
+returns void language plpgsql security definer set search_path = public, pg_temp as $$
+begin
+  perform public.office_room_sweep();
+  update public.office_room_occupants set last_seen = now() where user_id = auth.uid();
+end $$;
+
+-- Going in, once it is settled that you may. Not callable from outside. The
+-- caller holds the room locks (both rooms, in id order) already.
 create or replace function public.office_room_place(p_room text)
 returns void language plpgsql security definer set search_path = public, pg_temp as $$
 begin
-  -- One person at a time through a door: two at once could both count an empty
-  -- room, or come in as the last person leaves and lose the code under them.
-  perform 1 from public.office_rooms
-   where id = p_room or id = (select room_id from public.office_room_occupants where user_id = auth.uid())
-   order by id for update;
   if (select count(*) from public.office_room_occupants where room_id = p_room and user_id <> auth.uid())
      >= (select capacity from public.office_rooms where id = p_room) then
     raise exception 'That room is full.' using errcode = '22023';
   end if;
-  -- Nobody else here: a new code for a new conversation. Six digits from the
+  -- Nobody else here: a new conversation and a new code. Six digits from the
   -- random bits of a v4 uuid (core Postgres, no extension).
   if not exists (select 1 from public.office_room_occupants where room_id = p_room and user_id <> auth.uid()) then
+    delete from public.office_room_messages where room_id = p_room;
     insert into public.office_room_codes (room_id, code)
     values (p_room, lpad(((('x' || substr(md5(gen_random_uuid()::text), 1, 8))::bit(32)::bigint) % 1000000)::text, 6, '0'))
     on conflict (room_id) do update set code = excluded.code, created_at = now();
   end if;
   insert into public.office_room_occupants (user_id, room_id) values (auth.uid(), p_room)
-  on conflict (user_id) do update set room_id = excluded.room_id, joined_at = now();
+  on conflict (user_id) do update set room_id = excluded.room_id, joined_at = now(), last_seen = now();
   update public.office_room_invites set status = 'accepted', responded_at = now()
    where to_user = auth.uid() and room_id = p_room and status = 'pending' and expires_at > now();
 end $$;
+
+-- One person at a time through a door: both the room they are in and the one
+-- they are going to, in id order, so two doors can never wait on each other.
+create or replace function public.office_room_lock(p_room text)
+returns void language sql security definer set search_path = public, pg_temp as $$
+  select 1 from public.office_rooms
+   where id = p_room or id = (select room_id from public.office_room_occupants where user_id = auth.uid())
+   order by id for update
+$$;
 
 -- The answer comes back as a word, not an exception: an exception would undo
 -- the record of a wrong try, and the limit would count nothing.
@@ -323,19 +358,25 @@ declare
   v_tries int;
 begin
   if not public.is_team_member() then raise exception 'You are not in the office.' using errcode = '42501'; end if;
+  perform public.office_room_sweep();
   if p_room is null then
-    perform 1 from public.office_rooms where id = (select room_id from public.office_room_occupants where user_id = auth.uid()) for update;
+    perform public.office_room_lock(null);
     delete from public.office_room_occupants where user_id = auth.uid();
     return 'out';
   end if;
   if not exists (select 1 from public.office_rooms where id = p_room) then raise exception 'No such room.' using errcode = '22023'; end if;
   if exists (select 1 from public.office_room_occupants where user_id = auth.uid() and room_id = p_room) then
+    update public.office_room_occupants set last_seen = now() where user_id = auth.uid();
     return 'in';
   end if;
+  -- The doors are locked before anything is read, so the code checked is the
+  -- code of the conversation joined, and a burst of guesses counts as a burst.
+  perform public.office_room_lock(p_room);
   -- In use: the code, or an invite still waiting.
   if exists (select 1 from public.office_room_occupants where room_id = p_room)
      and not exists (select 1 from public.office_room_invites where to_user = auth.uid() and room_id = p_room and status = 'pending' and expires_at > now()) then
-    delete from public.office_room_code_tries where at < now() - interval '10 minutes';
+    perform pg_advisory_xact_lock(hashtext(auth.uid()::text || ':' || p_room));
+    delete from public.office_room_code_tries where user_id = auth.uid() and room_id = p_room and at < now() - interval '10 minutes';
     select count(*) into v_tries from public.office_room_code_tries where user_id = auth.uid() and room_id = p_room;
     if v_tries >= 5 then return 'locked'; end if;
     if nullif(btrim(coalesce(p_code, '')), '') is null then return 'needs_code'; end if;
@@ -355,11 +396,13 @@ create or replace function public.invite_to_room(p_to uuid)
 returns uuid language plpgsql security definer set search_path = public, pg_temp as $$
 declare v_room text; v_id uuid;
 begin
+  perform public.office_room_sweep();
   select room_id into v_room from public.office_room_occupants where user_id = auth.uid();
   if v_room is null then raise exception 'Step into a room first.' using errcode = '22023'; end if;
   if p_to = auth.uid() then raise exception 'You are already here.' using errcode = '22023'; end if;
   if not exists (select 1 from public.profiles p join public.office_members m on m.user_id = p.id
-                  where p.id = p_to and m.active and p.deactivated_at is null) then
+                  where p.id = p_to and m.active and p.deactivated_at is null)
+     and p_to is distinct from (select manager_id from public.office_settings where id = 1) then
     raise exception 'That person is not in the office.' using errcode = '22023';
   end if;
   if exists (select 1 from public.office_absences a where (a.user_id = p_to or a.user_id is null)
@@ -390,6 +433,8 @@ begin
   if not found then raise exception 'That invite is not yours.' using errcode = '42501'; end if;
   if r.status <> 'pending' or r.expires_at <= now() then raise exception 'That invite has lapsed.' using errcode = '22023'; end if;
   if p_accept then
+    perform public.office_room_sweep();
+    perform public.office_room_lock(r.room_id);
     perform public.office_room_place(r.room_id);
   else
     update public.office_room_invites set status = 'declined', responded_at = now() where id = p_id;
@@ -401,6 +446,10 @@ create or replace function public.office_room_emptied() returns trigger
 language plpgsql security definer set search_path = public, pg_temp as $$
 begin
   if tg_op = 'DELETE' or NEW.room_id is distinct from OLD.room_id then
+    -- Whoever leaves takes their open invitations with them: an invite is a
+    -- pass into a conversation its sender is part of.
+    update public.office_room_invites set status = 'declined', responded_at = now()
+     where room_id = OLD.room_id and from_user = OLD.user_id and status = 'pending';
     if not exists (select 1 from public.office_room_occupants where room_id = OLD.room_id) then
       delete from public.office_room_messages where room_id = OLD.room_id;
       delete from public.office_room_codes where room_id = OLD.room_id;
@@ -441,6 +490,7 @@ create table public.office_channel_messages (
   created_at timestamptz not null default now()
 );
 create index office_channel_messages_channel_created on public.office_channel_messages (channel, created_at desc);
+create index office_channel_messages_sender on public.office_channel_messages (sender);
 alter table public.office_channel_messages enable row level security;
 create policy "Team reads the channels" on public.office_channel_messages for select to authenticated using ((select public.is_team_member()));
 create policy "Team writes as themselves" on public.office_channel_messages for insert to authenticated
@@ -534,7 +584,10 @@ revoke execute on function public.enter_room(text, text) from public, anon;
 revoke execute on function public.invite_to_room(uuid) from public, anon;
 revoke execute on function public.respond_room_invite(uuid, boolean) from public, anon;
 revoke execute on function public.office_insights(int) from public, anon;
+revoke execute on function public.touch_room() from public, anon;
 revoke execute on function public.office_room_place(text) from public, anon, authenticated;
+revoke execute on function public.office_room_sweep() from public, anon, authenticated;
+revoke execute on function public.office_room_lock(text) from public, anon, authenticated;
 revoke execute on function public.office_room_emptied() from public, anon, authenticated;
 revoke execute on function public.office_room_person_off() from public, anon, authenticated;
 grant execute on function public.is_notice_admin() to authenticated;
@@ -549,6 +602,7 @@ grant execute on function public.enter_room(text, text) to authenticated;
 grant execute on function public.invite_to_room(uuid) to authenticated;
 grant execute on function public.respond_room_invite(uuid, boolean) to authenticated;
 grant execute on function public.office_insights(int) to authenticated;
+grant execute on function public.touch_room() to authenticated;
 
 -- ---------------------------------------------------------------------------
 -- 7. Live: the screens refresh as these change (Realtime respects the policies above).
@@ -584,13 +638,16 @@ begin
                            'public.request_leave(text, date, date, text)', 'public.decide_leave(uuid, boolean, text)', 'public.cancel_leave(uuid)',
                            'public.book_room(text, text, timestamptz, timestamptz)', 'public.cancel_booking(uuid)', 'public.enter_room(text, text)',
                            'public.invite_to_room(uuid)', 'public.respond_room_invite(uuid, boolean)', 'public.office_insights(int)',
-                           'public.office_room_place(text)'] loop
+                           'public.office_room_place(text)', 'public.office_room_sweep()', 'public.office_room_lock(text)', 'public.touch_room()'] loop
     if not exists (select 1 from pg_proc where oid = to_regprocedure(f) and prosecdef) then
       raise exception '0021: function % is missing or not security definer.', f;
     end if;
     if has_function_privilege('anon', f, 'execute') then raise exception '0021: anon can call %.', f; end if;
   end loop;
   if has_function_privilege('authenticated', 'public.office_room_place(text)', 'execute')
+     or has_function_privilege('authenticated', 'public.office_room_sweep()', 'execute')
+     or has_function_privilege('authenticated', 'public.office_room_lock(text)', 'execute')
+     or not has_function_privilege('authenticated', 'public.touch_room()', 'execute')
      or not has_function_privilege('authenticated', 'public.enter_room(text, text)', 'execute')
      or not has_function_privilege('authenticated', 'public.office_insights(int)', 'execute') then
     raise exception '0021: the wrong role can call a function.';

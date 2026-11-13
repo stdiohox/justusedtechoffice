@@ -136,9 +136,10 @@
     --shadow-md: 0 4px 16px rgba(11, 26, 18, 0.1);
     --shadow-lg: 0 8px 24px rgba(11, 26, 18, 0.12);
 
-    /* Insights chart (0021): on time, late, missed. Each measured against its surface. */
+    /* Insights chart (0021): on time, late, missed. Each measured against the
+       raised card it sits on: 4.7:1, 3.7:1 and 4.6:1. */
     --chart-on-time: #007a37;
-    --chart-late: #c9971c;
+    --chart-late: #a07a10;
     --chart-missed: #b0432f;
 
     /* Brand tints. Alpha fills that carry meaning, not surface roles. */

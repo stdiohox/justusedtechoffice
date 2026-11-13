@@ -48,8 +48,8 @@ function Chart({ days }: { days: InsightsDay[] }) {
           </span>
         ))}
       </figcaption>
-      <p aria-hidden className="tnum mt-1 h-5 text-[12px] text-text-secondary">
-        {hover ? `${dayLabel(hover.day)}: ${hover.on_time} on time, ${hover.late} late, ${hover.missed} missed` : 'Hover or tap a day for its figures.'}
+      <p aria-hidden className="tnum mt-1 min-h-5 text-[12px] text-text-secondary">
+        {hover ? `${dayLabel(hover.day)}: ${hover.on_time} on time, ${hover.late} late, ${hover.missed} missed` : 'Hover or tap a day for its figures. Keyboard users: open the table below.'}
       </p>
       <div aria-hidden className="mt-2 flex h-[180px] items-end gap-[2px] border-b border-line sm:gap-1.5">
         {days.map((d) => (
@@ -80,8 +80,9 @@ function Chart({ days }: { days: InsightsDay[] }) {
       </div>
       <details className="mt-3 text-[13px]">
         <summary className="cursor-pointer font-medium text-text-secondary hover:text-text-primary max-sm:min-h-11 max-sm:py-3">See the figures as a table</summary>
-        <div className="relative mt-2 overflow-x-auto">
+        <div className="relative mt-2 overflow-x-auto" tabIndex={0} role="region" aria-label="Reports each day, as a table">
           <table className="w-full text-left text-[13px]">
+            <caption className="sr-only">Reports on time, late and missed, and tasks approved, for each workday</caption>
             <thead className="text-text-muted">
               <tr>
                 <th scope="col" className="py-1 font-medium">Day</th>
@@ -128,8 +129,9 @@ function brief(d: Data): string[] {
 export function Insights() {
   const { seesTeam, loading } = useOfficeRole()
   const [days, setDays] = useState(10)
-  const { data, isLoading, isError, error } = useInsights(days, seesTeam)
+  const { data, isLoading, isError, error, isPlaceholderData } = useInsights(days, seesTeam)
   const on = useExtrasAvailable()
+  const pending = on === undefined || loading || isLoading
 
   if (on === false) return <ExtrasOff icon={<BarChart3 size={22} strokeWidth={1.5} />} what="Insights" />
   if (!loading && !seesTeam) {
@@ -141,7 +143,13 @@ export function Insights() {
       <div className="hairline-b sticky top-[var(--app-sticky-top)] z-10 flex flex-wrap items-end gap-3 bg-surface/95 px-4 pt-4 pb-3 backdrop-blur-sm sm:px-6">
         <div className="mr-auto">
           <h1 className="font-display text-[28px] leading-none font-medium text-text-primary">Insights</h1>
-          <p className="mt-1.5 text-[13px] text-text-muted">{data ? `${dayLabel(data.from)} to ${dayLabel(data.to)}. A guide for a conversation, not a verdict.` : 'A guide for a conversation, not a verdict.'}</p>
+          <p className="mt-1.5 text-[13px] text-text-muted" aria-live="polite">
+            {isPlaceholderData
+              ? `Working out the last ${days} days.`
+              : data
+                ? `${dayLabel(data.from)} to ${dayLabel(data.to)}. A guide for a conversation, not a verdict.`
+                : 'A guide for a conversation, not a verdict.'}
+          </p>
         </div>
         <div role="group" aria-label="How many workdays" className="flex gap-1">
           {RANGES.map((r) => (
@@ -160,8 +168,8 @@ export function Insights() {
           ))}
         </div>
       </div>
-      <div className="mx-auto max-w-[1100px] space-y-5 p-4 sm:p-6">
-        {isLoading ? <Skeleton className="h-[420px]" /> : null}
+      <div className={cn('mx-auto max-w-[1100px] space-y-5 p-4 sm:p-6', isPlaceholderData && 'opacity-70 transition-opacity')} aria-busy={pending || isPlaceholderData}>
+        {pending && !data ? <Skeleton className="h-[420px]" /> : null}
         {isError ? <EmptyState title="Could not load the insights" body={error instanceof Error ? error.message : 'Try again in a moment.'} /> : null}
         {data ? (
           <>
@@ -188,7 +196,7 @@ export function Insights() {
               <h2 id="insights-people" className="px-4 pt-4 text-[15px] font-bold text-text-primary">
                 Person by person
               </h2>
-              <div className="relative overflow-x-auto p-4 pt-2">
+              <div className="relative overflow-x-auto p-4 pt-2" tabIndex={0} role="region" aria-labelledby="insights-people">
                 <table className="w-full min-w-[640px] text-left text-[13px]">
                   <thead className="text-text-muted">
                     <tr className="hairline-b">

@@ -1,11 +1,11 @@
-import { useEffect, useId, useRef, useState, type FormEvent } from 'react'
+import { useEffect, useId, useMemo, useRef, useState, type FormEvent } from 'react'
 import { MessagesSquare, Send } from 'lucide-react'
 import { Button, EmptyState, FieldError, Skeleton } from '@/components/ui/primitives'
 import { Photo } from '@/components/ui/Photo'
+import { ExtrasOff } from '@/components/office/ExtrasOff'
 import { useOfficeMembers, useOfficeSettings } from '@/hooks/useOffice'
 import { useNow } from '@/hooks/useNow'
 import { useChannel, useExtrasAvailable, usePostMessage, type Channel } from '@/hooks/useExtras'
-import { ExtrasOff } from '@/components/office/ExtrasOff'
 import { useAuthStore } from '@/stores/authStore'
 import { localParts } from '@/lib/timezones'
 import { cn, firstName, initials } from '@/lib/utils'
@@ -27,22 +27,26 @@ export function TeamChat() {
   const { data: settings } = useOfficeSettings()
   const post = usePostMessage()
   const [body, setBody] = useState('')
-  const bottom = useRef<HTMLDivElement>(null)
-  const scroller = useRef<HTMLDivElement>(null)
+  const log = useRef<HTMLDivElement>(null)
   /** Reading older messages: a new one must not pull you away. */
   const atBottom = useRef(true)
   const zone = settings?.timezone ?? 'Africa/Lagos'
-  const messages = [...(data ?? [])].reverse()
-  const nameOf = (uid: string) => members?.find((m) => m.user_id === uid)?.user?.full_name ?? 'Someone'
+  const messages = useMemo(() => [...(data ?? [])].reverse(), [data])
+  const names = useMemo(() => new Map((members ?? []).map((m) => [m.user_id, m.user?.full_name ?? 'Someone'])), [members])
+  const nameOf = (uid: string) => names.get(uid) ?? 'Someone'
   const today = localParts(zone, useNow()).date
   const when = (iso: string) => {
     const p = localParts(zone, new Date(iso))
     return p.date === today ? p.time : `${new Date(iso).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', timeZone: zone })}, ${p.time}`
   }
+  // Unknown whether 0021 is in, or the first rows are on their way: not yet "nothing here".
+  const pending = on === undefined || isLoading
+  const current = CHANNELS.find((c) => c.id === channel)
 
   const newest = data?.[0]?.id
   useEffect(() => {
-    if (atBottom.current) bottom.current?.scrollIntoView({ block: 'nearest' })
+    // Only the log moves: scrolling into view would also move the page under someone reading.
+    if (atBottom.current && log.current) log.current.scrollTop = log.current.scrollHeight
   }, [newest, channel])
 
   const pickChannel = (next: Channel) => {
@@ -58,7 +62,8 @@ export function TeamChat() {
     if (!text) return
     setBody('')
     atBottom.current = true
-    post.mutate({ channel, body: text, sender: me }, { onError: () => setBody(text) })
+    const sentIn = channel
+    post.mutate({ channel: sentIn, body: text, sender: me }, { onError: () => setBody((typed) => (channel === sentIn ? typed || text : typed)) })
   }
 
   if (on === false) return <ExtrasOff icon={<MessagesSquare size={22} strokeWidth={1.5} />} what="Team chat" />
@@ -68,7 +73,7 @@ export function TeamChat() {
       <div className="hairline-b flex flex-wrap items-end gap-3 px-4 pt-4 pb-3 sm:px-6">
         <div className="mr-auto">
           <h1 className="font-display text-[28px] leading-none font-medium text-text-primary">Team chat</h1>
-          <p className="mt-1.5 text-[13px] text-text-muted">{CHANNELS.find((c) => c.id === channel)?.about}</p>
+          <p className="mt-1.5 text-[13px] text-text-muted">{current?.about}</p>
         </div>
         <div role="group" aria-label="Channel" className="flex flex-wrap gap-1">
           {CHANNELS.map((c) => (
@@ -90,9 +95,11 @@ export function TeamChat() {
       <div
         // A new element per channel, so switching does not read the whole channel aloud.
         key={channel}
-        ref={scroller}
+        ref={log}
         role="log"
-        aria-label={`Messages in ${CHANNELS.find((c) => c.id === channel)?.label}`}
+        tabIndex={0}
+        aria-label={`Messages in ${current?.label}`}
+        aria-busy={pending}
         onScroll={(e) => {
           const el = e.currentTarget
           atBottom.current = el.scrollHeight - el.scrollTop - el.clientHeight < 80
@@ -100,12 +107,12 @@ export function TeamChat() {
         className="min-h-0 flex-1 overflow-y-auto px-4 py-4 sm:px-6"
       >
         <div className="mx-auto max-w-[760px] space-y-3">
-          {isLoading ? <Skeleton className="h-40" /> : null}
+          {pending ? <Skeleton className="h-40" /> : null}
           {isError ? <EmptyState title="Could not load the chat" body="Try again in a moment." /> : null}
-          {!isLoading && !messages.length ? <EmptyState icon={<MessagesSquare size={22} strokeWidth={1.5} />} title="Nothing here yet" body="Say something to the team." /> : null}
+          {!pending && !isError && !messages.length ? <EmptyState icon={<MessagesSquare size={22} strokeWidth={1.5} />} title="Nothing here yet" body="Say something to the team." /> : null}
           {messages.map((m) => (
             <div key={m.id} className="row-in flex gap-2.5">
-              <span className="flex size-8 shrink-0 items-center justify-center rounded-full bg-brand text-[11px] font-bold text-surface">
+              <span aria-hidden className="flex size-8 shrink-0 items-center justify-center rounded-full bg-brand text-[11px] font-bold text-surface">
                 <Photo userId={m.sender} className="size-8">
                   {initials(nameOf(m.sender))}
                 </Photo>
@@ -119,7 +126,6 @@ export function TeamChat() {
               </div>
             </div>
           ))}
-          <div ref={bottom} />
         </div>
       </div>
       <form onSubmit={submit} className="hairline-t bg-surface-raised px-4 py-3 sm:px-6">
@@ -132,7 +138,7 @@ export function TeamChat() {
             value={body}
             maxLength={1000}
             onChange={(e) => setBody(e.target.value)}
-            placeholder={`Message ${CHANNELS.find((c) => c.id === channel)?.label}`}
+            placeholder={`Message ${current?.label}`}
             className="hairline h-10 min-w-0 flex-1 rounded-full bg-surface px-4 text-[14px] text-text-primary max-sm:h-11"
           />
           <Button type="submit" loading={post.isPending} icon={<Send size={15} aria-hidden />} className="h-10 max-sm:h-11">
